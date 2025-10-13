@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# personal data
+app/data/*
+app/.env
+
+# dev tools
+app/utils/brouillon.ipynb
