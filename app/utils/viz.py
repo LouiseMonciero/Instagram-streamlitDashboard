@@ -121,32 +121,32 @@ def media_cumulative_line(df: pd.DataFrame) -> alt.Chart:
     )
     return chart
 
-def stories_histogram(df: pd.DataFrame, by: str = "months", media_type="stories") -> alt.Chart:
+def media_frequency_histogram(df: pd.DataFrame, by: str = "months", media_type=["stories"], color="oranges") -> alt.Chart:
     """
     Histogram of posts/stories frequency grouped by year, month, or week.
     The DataFrame must have a 'timestamp' column formatted as YYYYMM or YYYYMMDD.
     """
 
-    stories = df[df["media_type"] == media_type]
+    selected_medias = df[df["media_type"].isin(media_type)]
 
-    if stories.empty:
+    if selected_medias.empty:
         return alt.Chart(pd.DataFrame({"msg": ["No story data"]})).mark_text().encode(text="msg")
 
     # Parse timestamp safely
-    stories["timestamp"] = stories["timestamp"].astype(str)
-    stories["date"] = pd.to_datetime(stories["timestamp"].str[:6], format="%Y%m", errors="coerce")
+    selected_medias["timestamp"] = selected_medias["timestamp"].astype(str)
+    selected_medias["date"] = pd.to_datetime(selected_medias["timestamp"].str[:6], format="%Y%m", errors="coerce")
 
     # Choose grouping level
     if by == "years":
-        stories["period"] = stories["date"].dt.year.astype(str)
+        selected_medias["period"] = selected_medias["date"].dt.year.astype(str)
     elif by == "months":
-        stories["period"] = stories["date"].dt.to_period("M").astype(str)
+        selected_medias["period"] = selected_medias["date"].dt.to_period("M").astype(str)
     elif by == "weeks":
-        stories["period"] = stories["date"].dt.to_period("W").astype(str)
+        selected_medias["period"] = selected_medias["date"].dt.to_period("W").astype(str)
     else:
         raise ValueError("Parameter 'by' must be 'year', 'month', or 'week'.")
 
-    agg = stories.groupby("period", as_index=False).size().rename(columns={"size": "count"})
+    agg = selected_medias.groupby("period", as_index=False).size().rename(columns={"size": "count"})
 
     chart = (
         alt.Chart(agg)
@@ -155,7 +155,7 @@ def stories_histogram(df: pd.DataFrame, by: str = "months", media_type="stories"
             x=alt.X("period:N", title=f"Period ({by})", sort="x"),
             y=alt.Y("count:Q", title="Number of Stories"),
             tooltip=["period:N", "count:Q"],
-            color=alt.Color("count:Q", scale=alt.Scale(scheme="oranges")),
+            color=alt.Color("count:Q", scale=alt.Scale(scheme=color)),
         )
         .properties(
             title=f"Stories frequency by {by.capitalize()}",

@@ -1,9 +1,8 @@
 import streamlit as st
-from utils.io import load_data, pwd
-from utils.viz import login_logout_hist, cookies_pie, website_bar, password_activity_bar, upset, plot_venn, plot_follow_time_series_altair, follows_pie, media_cumulative_line, media_type_bar, stories_histogram
+from math import ceil
+from utils.io import load_data, pwd, DATA_PATH
+from utils.viz import login_logout_hist, cookies_pie, website_bar, password_activity_bar, upset, plot_venn, plot_follow_time_series_altair, follows_pie, media_cumulative_line, media_type_bar, media_frequency_histogram
 from utils.prep import preprocess_data, date_str
-#from utils.prep import make_tables
-#from utils.viz import line_chart, bar_chart, map_chart
 
 st.set_page_config(page_title="Data Storytelling Dashboard", layout="wide")
 @st.cache_data(show_spinner=False)
@@ -16,7 +15,7 @@ def get_data():
 
 st.title("Personal Instagram Dashboard !")
 st.caption("Source: <dataset title> — <portal> — <license>")
-tab1, connections_tab, media_tab, tab4, tab5, link_history_tab, tab7, tab8, security_tab = st.tabs(["Welcome !", "Connections", "Media", "Preferences","Your activity", "Link History", 'Ads Info', "Personnal Information", "Security Insights"])
+tab1, connections_tab, media_tab, preferences_tab, tab5, link_history_tab, tab7, tab8, security_tab = st.tabs(["Welcome !", "Connections", "Media", "Preferences","Your activity", "Link History", 'Ads Info', "Personnal Information", "Security Insights"])
 
 st.write('here is the path',pwd())
 
@@ -122,18 +121,87 @@ with media_tab:
     with col1 : 
         st.subheader("Posting over the years")
         st.altair_chart(media_cumulative_line(df_media_prep), use_container_width=True)
-
+        st.write("You currently have", df_media_prep[df_media_prep["media_type"]=="posts"].shape[0], "pictures in your posts,", df_media_prep[df_media_prep["media_type"]=="archived_posts"].shape[0],"archived posts pictures,", df_media_prep[df_media_prep["media_type"]=="profile"].shape[0], "profile picture,", df_media_prep[df_media_prep["media_type"]=="stories"].shape[0], "stories and", df_media_prep[df_media_prep["media_type"]=="recently_deleted"].shape[0], "recently deleted pictures")
     with col2 :
         st.subheader("Media types distribution")
         st.altair_chart(media_type_bar(df_media_prep), use_container_width=True)
 
     st.subheader("Stories frequencies ")
-    by = st.radio("Grouped by :", ["years","months","weeks"], horizontal=True, index=0)
-    st.altair_chart(stories_histogram(df_media_prep, by), use_container_width=True)
+    by_stories = st.radio("Grouped by :", ["years","months","weeks"], index=1, horizontal=True, key="stories_hist")
+    st.altair_chart(media_frequency_histogram(df_media_prep, by_stories), use_container_width=True)
 
-    st.subheader("Gallery")
+    st.subheader("Posts & Archived Posts frequencies ")
+    by_posts = st.radio("Grouped by :", ["years","months","weeks"], index=1, horizontal=True, key="posts_hist")
+    st.altair_chart(media_frequency_histogram(df_media_prep, by_posts, media_type=["archived_posts", "posts"], color='blues'), use_container_width=True)
+
+# ------------gallery ---------------
+    st.header("Gallery")
+    controls = st.columns(4)
+    with controls[0]:
+        media_types = st.multiselect("Media Types", ["Posts", "Stories", "Archived Posts", "Deleted"], default=["Posts", "Stories"])
+    with controls[1]:
+        # Extract unique year-months from the 'timestamp' column, sort them
+        available_dates = sorted(df_media_prep['timestamp'].unique())
+        # Convert to string for display (if not already)
+        available_dates = [str(d) for d in available_dates]
+        # Use select_slider for date range selection
+        selected_range = st.select_slider(
+            "Date Range:",
+            options=available_dates,
+            value=(available_dates[0], available_dates[-1]),
+            key='date_range'
+        )
+        # Filter df_media_prep based on selected_range
+        df_media_prep = df_media_prep[
+            (df_media_prep['timestamp'] >= selected_range[0]) &
+            (df_media_prep['timestamp'] <= selected_range[1])
+        ]
+    with controls[2]:
+        batch_size = st.select_slider("Batch size:", range(10, 110, 10), key='batch_slider')
+    num_batches = ceil(len(df_media) / batch_size)
+
+    with controls[3]:
+        page = st.selectbox("Page", range(1, num_batches + 1), key='page')
+
+    # Update function when checkbox or label changes
+    def update(image, col):
+        df_media_prep.at[image, col] = st.session_state[f'{col}_{image}']
+        if st.session_state[f'incorrect_{image}'] == False:
+            st.session_state[f'label_{image}'] = ''
+            df_media_prep.at[image, 'label'] = ''
+
+    # Select the batch of files based on the page
+    batch = df_media_prep[(page - 1) * batch_size : page * batch_size]
+
+    # Create a grid of columns for the display
+    row_size = 4  # Adjust based on how many columns you want to display per row
+    grid = st.columns(row_size)
+    col = 0
+
+    # Loop over the batch and display images/videos
+    for _, media in batch.iterrows():  # Use iterrows() to iterate over the rows
+        media_path = media['relative_path']
+        media_ext = media['ext']
+        media_file = f'{DATA_PATH}/media/{media_path}'  # Adjust to your actual directory path
+
+        with grid[col]:
+            if media_ext in ['jpg', 'jpeg', 'png']:  # Image handling
+                st.image(media_file, caption='Media')
+            elif media_ext == 'mp4':  # Video handling
+                st.video(media_file)
+
+        col = (col + 1) % row_size  # Move to the next column
 
 
+    
+with preferences_tab:
+    #recommended_topics = preprocess_data(df_link_history=df_link_history)
+    st.header("Your recommended topics")
+    with st.expander("Show raw datas"):
+        st.write("recommended topics")
+        st.write(recommended_topics)
+
+    #st.altair_chart(website_bar(df_link_history))
 
 with link_history_tab:
     df_link_history_prep = preprocess_data(df_link_history=df_link_history)
