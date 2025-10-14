@@ -73,10 +73,130 @@ def _group_counts(df: pd.DataFrame, by: str):
     grp["count_signed"] = np.where(grp["event"].eq("logout"), -grp["count"], grp["count"])
     return grp, key, order
 
-# ---------- follows ---------
+# ---------- media -----------
 
-def plot_venn_or_upset(sets_by_type: dict, selected_types=None, title="Venn / UpSet"):
-    """Venn si 2-3 groupes (matplotlib-venn), sinon fallback UpSet-like (barres intersections)."""
+def media_cumulative_line(df: pd.DataFrame) -> alt.Chart:
+    """
+    Line chart showing cumulative count of posts (or archived_posts) and stories over time.
+    """
+    # Keep only posts and stories
+    media = df[df["media_type"].isin(["posts", "archived_posts", "stories"])].copy()
+
+    if media.empty:
+        return alt.Chart(pd.DataFrame({"msg": ["No media data"]})).mark_text().encode(text="msg")
+
+    media["timestamp"] = media["timestamp"].astype(str)
+    media["date"] = pd.to_datetime(media["timestamp"].str[:6], format="%Y%m", errors="coerce")
+
+    # Aggregate counts
+    media["count"] = 1
+    media = (
+        media.groupby(["date", "media_type"], as_index=False)["count"]
+        .sum()
+        .sort_values("date")
+    )
+
+    # Cumulative sum by type
+    media["cum_count"] = media.groupby("media_type")["count"].cumsum()
+
+    chart = (
+        alt.Chart(media)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("date:T", title="Date"),
+            y=alt.Y("cum_count:Q", title="Cumulative Count"),
+            color=alt.Color("media_type:N", title="Media Type"),
+            tooltip=[
+                alt.Tooltip("date:T", title="Date"),
+                alt.Tooltip("media_type:N", title="Type"),
+                alt.Tooltip("cum_count:Q", title="Cumulative posts"),
+            ],
+        )
+        .properties(
+            title="Cumulative evolution of posts and stories over time",
+            width=700,
+            height=400,
+        )
+        .interactive()
+    )
+    return chart
+
+def stories_histogram(df: pd.DataFrame, by: str = "months", media_type="stories") -> alt.Chart:
+    """
+    Histogram of posts/stories frequency grouped by year, month, or week.
+    The DataFrame must have a 'timestamp' column formatted as YYYYMM or YYYYMMDD.
+    """
+
+    stories = df[df["media_type"] == media_type]
+
+    if stories.empty:
+        return alt.Chart(pd.DataFrame({"msg": ["No story data"]})).mark_text().encode(text="msg")
+
+    # Parse timestamp safely
+    stories["timestamp"] = stories["timestamp"].astype(str)
+    stories["date"] = pd.to_datetime(stories["timestamp"].str[:6], format="%Y%m", errors="coerce")
+
+    # Choose grouping level
+    if by == "years":
+        stories["period"] = stories["date"].dt.year.astype(str)
+    elif by == "months":
+        stories["period"] = stories["date"].dt.to_period("M").astype(str)
+    elif by == "weeks":
+        stories["period"] = stories["date"].dt.to_period("W").astype(str)
+    else:
+        raise ValueError("Parameter 'by' must be 'year', 'month', or 'week'.")
+
+    agg = stories.groupby("period", as_index=False).size().rename(columns={"size": "count"})
+
+    chart = (
+        alt.Chart(agg)
+        .mark_bar()
+        .encode(
+            x=alt.X("period:N", title=f"Period ({by})", sort="x"),
+            y=alt.Y("count:Q", title="Number of Stories"),
+            tooltip=["period:N", "count:Q"],
+            color=alt.Color("count:Q", scale=alt.Scale(scheme="oranges")),
+        )
+        .properties(
+            title=f"Stories frequency by {by.capitalize()}",
+            width=600,
+            height=350,
+        )
+    )
+    return chart
+
+def media_type_bar(df: pd.DataFrame) -> alt.Chart:
+    agg = (
+        df.groupby("media_type", as_index=False)
+          .size()
+          .rename(columns={"size": "count"})
+          .sort_values("count", ascending=False)
+    )
+
+    chart = (
+        alt.Chart(agg)
+        .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
+        .encode(
+            x=alt.X("media_type:N", title="Media Type", sort="-y"),
+            y=alt.Y("count:Q", title="Number of Media"),
+            color=alt.Color("count:Q", scale=alt.Scale(scheme="blues")),
+            tooltip=[
+                alt.Tooltip("media_type:N", title="Type"),
+                alt.Tooltip("count:Q", title="Count"),
+            ],
+        )
+        .properties(
+            title="Distribution of Media Types",
+            width=400,
+            height=350,
+        )
+    )
+    return chart
+
+
+# ---------- follows ---------
+def plot_venn(sets_by_type: dict, selected_types=None):
+    """Venn if 2-3 groups (matplotlib-venn)"""
 
     if selected_types is None:
         selected_types = ["followings", "followers", "close_friends"]
@@ -85,7 +205,7 @@ def plot_venn_or_upset(sets_by_type: dict, selected_types=None, title="Venn / Up
 
     if len(groups) == 0:
         fig = plt.figure(figsize=(6, 4))
-        plt.text(0.5, 0.5, "Pas de données pour les groupes sélectionnés", ha="center", va="center")
+        plt.text(0.5, 0.5, "No data for the selected groups", ha="center", va="center")
         plt.axis("off")
         return fig
 
@@ -96,16 +216,20 @@ def plot_venn_or_upset(sets_by_type: dict, selected_types=None, title="Venn / Up
             venn2([sets_by_type[groups[0]], sets_by_type[groups[1]]], set_labels=groups)
         else:  # 3
             venn3([sets_by_type[g] for g in groups], set_labels=groups)
-        plt.title(title)
+        plt.title("Follows Type - Venn Diagram")
+        return fig
+    
+    else :
+        fig = plt.figure(figsize=(6, 4))
+        plt.text(0.5, 0.5, "+ 3 gps", ha="center", va="center")
         return fig
 
+def upset(sets_by_type: dict, selected_types=None):
     # UpSet-like (bar chart des intersections)
+    groups = [g for g in selected_types if g in sets_by_type and len(sets_by_type[g]) > 0]
     union_users = set().union(*[sets_by_type[g] for g in groups])
-    rows = []
-    for u in union_users:
-        rows.append({g: int(u in sets_by_type[g]) for g in groups})
+    rows = [{g: int(u in sets_by_type[g]) for g in groups} for u in union_users]
     mat = pd.DataFrame(rows)
-
     comb = mat.groupby(groups).size().reset_index(name="count")
     comb = comb[comb["count"] > 0]
 
@@ -115,34 +239,105 @@ def plot_venn_or_upset(sets_by_type: dict, selected_types=None, title="Venn / Up
     comb["label"] = comb.apply(label_row, axis=1)
     comb = comb.sort_values("count", ascending=False).head(15)
 
-    fig = plt.figure(figsize=(9, 5))
-    plt.bar(comb["label"], comb["count"])
-    plt.xticks(rotation=45, ha="right")
-    plt.ylabel("Utilisateurs dans l'intersection")
-    plt.title(f"Intersections (Top {min(15, len(comb))})")
-    plt.tight_layout()
-    return fig
+    chart = (
+        alt.Chart(comb)
+        .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
+        .encode(
+            x=alt.X("label:N", title="Group combinations", sort="-y"),
+            y=alt.Y("count:Q", title="Users in intersection"),
+            tooltip=["label", "count"],
+            color=alt.Color("count:Q", scale=alt.Scale(scheme="blues")),
+        )
+        .properties(title=f"Group intersections (Top {min(15, len(comb))})", width="container", height=350)
+    )
+    return chart
 
-
-def plot_follow_time_series(timeseries: pd.DataFrame, cumulative: bool = True, title="Followers / Followings over time"):
-    """Courbe cumulée (par défaut) ou journalière des ajouts."""
-    y = "cum_count" if cumulative else "new_count"
-    fig = plt.figure(figsize=(9, 4))
+def plot_follow_time_series_altair(
+    timeseries: pd.DataFrame,
+    cumulative: bool = True,
+    title: str = "Followers / Followings over time",
+):
+    """
+    Interactive Altair line chart showing the evolution of followers / followings.
+    - cumulative=True: cumulative count
+    - cumulative=False: daily new additions
+    """
     if timeseries.empty:
-        plt.text(0.5, 0.5, "Pas de données de série temporelle", ha="center", va="center")
-        plt.axis("off")
-        return fig
+        st.warning("⚠️ No data available for time series.")
+        return None
 
-    for t, sub in timeseries.groupby("follows_type"):
-        s = sub.sort_values("date")
-        plt.plot(s["date"], s[y], label=t)
+    y_col = "cum_count" if cumulative else "new_count"
+    y_label = "Cumulative count" if cumulative else "New per day"
 
-    plt.xlabel("Date")
-    plt.ylabel("Cumul" if cumulative else "Nouveaux / jour")
-    plt.title(title)
-    plt.legend()
-    plt.tight_layout()
-    return fig
+    # ensure correct types
+    timeseries = timeseries.copy()
+    timeseries["date"] = pd.to_datetime(timeseries["date"])
+
+    chart = (
+        alt.Chart(timeseries)
+        .mark_line(point=True, interpolate="monotone")
+        .encode(
+            x=alt.X("date:T", title="Date"),
+            y=alt.Y(f"{y_col}:Q", title=y_label),
+            color=alt.Color("follows_type:N", title="Type"),
+            tooltip=[
+                alt.Tooltip("date:T", title="Date"),
+                alt.Tooltip("follows_type:N", title="Type"),
+                alt.Tooltip(f"{y_col}:Q", title=y_label),
+            ],
+        )
+        .properties(
+            title=title,
+            width="container",
+            height=350,
+        )
+        .interactive()
+    )
+
+    # Add smooth transitions with layered points (optional)
+    points = (
+        alt.Chart(timeseries)
+        .mark_circle(size=60)
+        .encode(
+            x="date:T",
+            y=f"{y_col}:Q",
+            color="follows_type:N",
+            tooltip=["date:T", "follows_type:N", f"{y_col}:Q"],
+        )
+    )
+
+    return chart + points
+
+def follows_pie(df: pd.DataFrame) -> alt.Chart:
+    # --- aggregate by follows_type ---
+    agg = (
+        df.groupby("follows_type", as_index=False)
+        .size()
+        .rename(columns={"size": "count"})
+    )
+    agg["percentage"] = 100 * agg["count"] / agg["count"].sum()
+
+    # --- Altair pie chart ---
+    chart = (
+        alt.Chart(agg)
+        .mark_arc(outerRadius=130, innerRadius=40)
+        .encode(
+            theta=alt.Theta("count:Q", stack=True, title=""),
+            color=alt.Color("follows_type:N", title="Follows Type", scale=alt.Scale(scheme="tableau10")),
+            tooltip=[
+                alt.Tooltip("follows_type:N", title="Type"),
+                alt.Tooltip("count:Q", title="Count"),
+                alt.Tooltip("percentage:Q", title="%", format=".1f"),
+            ],
+        )
+        .properties(
+            title="Distribution of Follows Types",
+            width=400,
+            height=400,
+        )
+    )
+
+    return chart
 
 # ---------- security charts ----------
 def login_logout_hist(df: pd.DataFrame, by: str = "months") -> alt.Chart:

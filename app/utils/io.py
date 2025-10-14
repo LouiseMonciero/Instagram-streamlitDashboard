@@ -258,8 +258,6 @@ def load_data():
 
     return (df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs)
 
-
-
 def fetch_and_cache():
     return
 
