@@ -7,12 +7,33 @@ Understand what Meta knows about you. This streamlit dashboard helps visualize y
 2. Unzip the file and put it inside app/data
 
 3. Create your .env files inside 'app/'
+
 ```.env
 DATA_PATH = './data/name_of_your_folder'
 ```
 
-## Run the app
-Inside './app/'
+## Installation complète
+1. Install your python environement
+E.g.
+```bash
+pyenv install 3.11.9
+```
+
+2. Create and activate the virtual environement
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+5. Run the dashboard in 'app/' :
+
 ```bash
 streamlit run app.py
 ```

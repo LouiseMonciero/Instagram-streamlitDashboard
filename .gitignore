@@ -211,4 +211,4 @@ app/data/*
 app/.env
 
 # dev tools
-app/utils/brouillon.ipynb
+app/utils/*.ipynb

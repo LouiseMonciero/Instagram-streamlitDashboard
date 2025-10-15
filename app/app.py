@@ -1,8 +1,10 @@
 import streamlit as st
 from math import ceil
 from utils.io import load_data, pwd, DATA_PATH
-from utils.viz import login_logout_hist, cookies_pie, website_bar, password_activity_bar, upset, plot_venn, plot_follow_time_series_altair, follows_pie, media_cumulative_line, media_type_bar, media_frequency_histogram
+from utils.viz import login_logout_hist, cookies_pie, website_bar, password_activity_bar, upset, plot_venn, plot_follow_time_series_altair, follows_pie, media_cumulative_line, media_type_bar, media_frequency_histogram, clusters_podium, clusters_grid, clu_podium
 from utils.prep import preprocess_data, date_str
+# Import lazy - w2v_model ne chargera gensim que lors de l'appel à generate_clusters
+from utils.w2v_model import generate_clusters
 
 st.set_page_config(page_title="Data Storytelling Dashboard", layout="wide")
 @st.cache_data(show_spinner=False)
@@ -136,73 +138,96 @@ with media_tab:
 
 # ------------gallery ---------------
     st.header("Gallery")
-    controls = st.columns(4)
-    with controls[0]:
-        media_types = st.multiselect("Media Types", ["Posts", "Stories", "Archived Posts", "Deleted"], default=["Posts", "Stories"])
-    with controls[1]:
-        # Extract unique year-months from the 'timestamp' column, sort them
-        available_dates = sorted(df_media_prep['timestamp'].unique())
-        # Convert to string for display (if not already)
-        available_dates = [str(d) for d in available_dates]
-        # Use select_slider for date range selection
-        selected_range = st.select_slider(
-            "Date Range:",
-            options=available_dates,
-            value=(available_dates[0], available_dates[-1]),
-            key='date_range'
-        )
-        # Filter df_media_prep based on selected_range
-        df_media_prep = df_media_prep[
-            (df_media_prep['timestamp'] >= selected_range[0]) &
-            (df_media_prep['timestamp'] <= selected_range[1])
-        ]
-    with controls[2]:
-        batch_size = st.select_slider("Batch size:", range(10, 110, 10), key='batch_slider')
-    num_batches = ceil(len(df_media) / batch_size)
+    if st.button("Load your gallery !", type="primary"):
+        controls = st.columns(4)
+        with controls[0]:
+            media_types = st.multiselect("Media Types", ["Posts", "Stories", "Archived Posts", "Deleted"], default=["Posts", "Stories"])
+        with controls[1]:
+            # Extract unique year-months from the 'timestamp' column, sort them
+            available_dates = sorted(df_media_prep['timestamp'].unique())
+            # Convert to string for display (if not already)
+            available_dates = [str(d) for d in available_dates]
+            # Use select_slider for date range selection
+            selected_range = st.select_slider(
+                "Date Range:",
+                options=available_dates,
+                value=(available_dates[0], available_dates[-1]),
+                key='date_range'
+            )
+            # Filter df_media_prep based on selected_range
+            df_media_prep = df_media_prep[
+                (df_media_prep['timestamp'] >= selected_range[0]) &
+                (df_media_prep['timestamp'] <= selected_range[1])
+            ]
+        with controls[2]:
+            batch_size = st.select_slider("Batch size:", range(10, 110, 10), key='batch_slider')
+        num_batches = ceil(len(df_media) / batch_size)
 
-    with controls[3]:
-        page = st.selectbox("Page", range(1, num_batches + 1), key='page')
+        with controls[3]:
+            page = st.selectbox("Page", range(1, num_batches + 1), key='page')
 
-    # Update function when checkbox or label changes
-    def update(image, col):
-        df_media_prep.at[image, col] = st.session_state[f'{col}_{image}']
-        if st.session_state[f'incorrect_{image}'] == False:
-            st.session_state[f'label_{image}'] = ''
-            df_media_prep.at[image, 'label'] = ''
+        # Update function when checkbox or label changes
+        def update(image, col):
+            df_media_prep.at[image, col] = st.session_state[f'{col}_{image}']
+            if st.session_state[f'incorrect_{image}'] == False:
+                st.session_state[f'label_{image}'] = ''
+                df_media_prep.at[image, 'label'] = ''
 
-    # Select the batch of files based on the page
-    batch = df_media_prep[(page - 1) * batch_size : page * batch_size]
+        # Select the batch of files based on the page
+        batch = df_media_prep[(page - 1) * batch_size : page * batch_size]
 
-    # Create a grid of columns for the display
-    row_size = 4  # Adjust based on how many columns you want to display per row
-    grid = st.columns(row_size)
-    col = 0
+        # Create a grid of columns for the display
+        row_size = 4  # Adjust based on how many columns you want to display per row
+        grid = st.columns(row_size)
+        col = 0
 
-    # Loop over the batch and display images/videos
-    for _, media in batch.iterrows():  # Use iterrows() to iterate over the rows
-        media_path = media['relative_path']
-        media_ext = media['ext']
-        media_file = f'{DATA_PATH}/media/{media_path}'  # Adjust to your actual directory path
 
-        with grid[col]:
-            if media_ext in ['jpg', 'jpeg', 'png']:  # Image handling
-                st.image(media_file, caption='Media')
-            elif media_ext == 'mp4':  # Video handling
-                st.video(media_file)
+        # Loop over the batch and display images/videos
+        for _, media in batch.iterrows():  # Use iterrows() to iterate over the rows
+            media_path = media['relative_path']
+            media_ext = media['ext']
+            media_file = f'{DATA_PATH}/media/{media_path}'  # Adjust to your actual directory path
 
-        col = (col + 1) % row_size  # Move to the next column
+            with grid[col]:
+                if media_ext in ['jpg', 'jpeg', 'png']:  # Image handling
+                    st.image(media_file, caption='Media')
+                elif media_ext == 'mp4':  # Video handling
+                    st.video(media_file)
+
+            col = (col + 1) % row_size  # Move to the next column
 
 
     
 with preferences_tab:
-    #recommended_topics = preprocess_data(df_link_history=df_link_history)
     st.header("Your recommended topics")
     with st.expander("Show raw datas"):
         st.write("recommended topics")
         st.write(recommended_topics)
+    
+    st.write("Launching the predictions will allow you to see your most frequent categories among your preferences." \
+        "This model is a Clustering ML model based on Word2Vector librairie using gensim.")
+    button_col = st.columns([1, 2, 1])[1]
+    with button_col:
+        if st.button("🚀 Generate Topic Clusters", type="primary"):
+            with st.spinner("Loading Word2Vec model and generating clusters... This may take a moment."):
+                try:
+                    cluster_datas, clusters_compositions = generate_clusters(recommended_topics=recommended_topics)
+                    st.session_state['cluster_datas'] = cluster_datas
+                    st.session_state['clusters_compositions'] = clusters_compositions
+                    st.success("✅ Clusters generated successfully!")
+                except Exception as e:
+                    st.error(f"Error generating clusters: {e}")
 
-    #st.altair_chart(website_bar(df_link_history))
+    if 'cluster_datas' in st.session_state and 'clusters_compositions' in st.session_state:
+        with st.expander("Show your results"):
+            st.subheader("Topic Clusters")
+            st.write(st.session_state['cluster_datas'])
+            st.subheader("Cluster Compositions")
+            st.write(st.session_state['clusters_compositions'])
+        st.altair_chart(clusters_podium(st.session_state['cluster_datas'], clusters_compositions))
+        st.altair_chart(clusters_grid(st.session_state['cluster_datas'], clusters_compositions))
 
+    st.altair_chart(clu_podium())
 with link_history_tab:
     df_link_history_prep = preprocess_data(df_link_history=df_link_history)
     st.header("Link history")
