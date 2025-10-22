@@ -1,10 +1,12 @@
 import streamlit as st
 from math import ceil
-from utils.io import load_data, pwd, DATA_PATH
-from utils.viz import login_logout_hist, cookies_pie, website_bar, password_activity_bar, upset, plot_venn, plot_follow_time_series_altair, follows_pie, media_cumulative_line, media_type_bar, media_frequency_histogram, clusters_podium, clusters_grid, clu_podium
+from utils.io import load_data, pwd, DATA_PATH, HEADERS
+from utils.viz import login_logout_hist, cookies_pie, website_bar, password_activity_bar, upset, plot_venn, plot_follow_time_series_altair, follows_pie, media_cumulative_line, media_type_bar, media_frequency_histogram, clusters_podium, clusters_grid, plot_locations_map, devices_over_times, ads_bar, ads_countries_map, ads_enriched_missing_values, ads_inception_year
 from utils.prep import preprocess_data, date_str
 # Import lazy - w2v_model ne chargera gensim que lors de l'appel à generate_clusters
 from utils.w2v_model import generate_clusters
+from utils.data_enrichement import enrich_companies
+
 
 st.set_page_config(page_title="Data Storytelling Dashboard", layout="wide")
 @st.cache_data(show_spinner=False)
@@ -17,7 +19,7 @@ def get_data():
 
 st.title("Personal Instagram Dashboard !")
 st.caption("Source: <dataset title> — <portal> — <license>")
-tab1, connections_tab, media_tab, preferences_tab, tab5, link_history_tab, tab7, tab8, security_tab = st.tabs(["Welcome !", "Connections", "Media", "Preferences","Your activity", "Link History", 'Ads Info', "Personnal Information", "Security Insights"])
+tab1, connections_tab, media_tab, preferences_tab, activity_tab, link_history_tab, ads_tab, personal_info_tab, security_tab = st.tabs(["Welcome !", "Connections", "Media", "Preferences","Your activity", "Link History", 'Ads Info', "Personnal Information", "Security Insights"])
 
 st.write('here is the path',pwd())
 
@@ -25,7 +27,7 @@ with st.sidebar:
     st.header("Filters")
     date_range = st.date_input("Date range", [])
 
-df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs = get_data()
+df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs, df_all_ads, substriction_status, information_youve_submitted_to_advertisers, advertisers_using_your_activity_or_information, other_categories_used_to_reach_you, advertisers_enriched = get_data()
 
 with connections_tab:
     st.header("Connections")
@@ -196,7 +198,12 @@ with media_tab:
 
             col = (col + 1) % row_size  # Move to the next column
 
-
+with activity_tab:
+    st.header("Your activity")
+    with st.expander("Show raw datas"):
+        st.subheader("All ads information")
+        st.info("This dataFrame was made up of 5 different files (videos_watched.json, suggested_profiles_viewed.json, posts_viewed.json, ads_clicked.json and ads_viewed.json). To normalized the data, the 'username' column of the profile original suggested_profiles_viewed datFrame and the 'title' column of the ads_clicked dataFrame were renamed to 'author'.")
+        st.write(df_all_ads)
     
 with preferences_tab:
     st.header("Your recommended topics")
@@ -227,7 +234,6 @@ with preferences_tab:
         st.altair_chart(clusters_podium(st.session_state['cluster_datas'], clusters_compositions))
         st.altair_chart(clusters_grid(st.session_state['cluster_datas'], clusters_compositions))
 
-    st.altair_chart(clu_podium())
 with link_history_tab:
     df_link_history_prep = preprocess_data(df_link_history=df_link_history)
     st.header("Link history")
@@ -236,6 +242,88 @@ with link_history_tab:
         st.write(df_follows)
 
     st.altair_chart(website_bar(df_link_history))
+
+with ads_tab:
+    st.header("Ads information")
+    with st.expander("Show raw datas"):
+        st.subheader("Advertisers using your activity or information")
+        st.write(advertisers_using_your_activity_or_information)
+        st.subheader("Other categories used to reach you")
+        st.write(other_categories_used_to_reach_you)
+    
+    st.write("Your substriction for no-ads is", substriction_status)
+    st.write("Below are the **personal informations you submitted to advertisers** :")
+    st.table(information_youve_submitted_to_advertisers)
+
+    st.altair_chart(ads_bar(advertisers_using_your_activity_or_information))
+
+    if advertisers_enriched is not None :
+        st.write("The following vizualisation were compiled thanks to data enrichement")
+    else :
+        if st.button("Enrich the advestisers data"):
+            seconds = len(advertisers_using_your_activity_or_information)
+            with st.spinner("Enriching your advertisers data... Browsing the advertisers name on wikidata... This may take a moment (~"+str(seconds//60)+"min"+str(seconds%60)+"sec)"):
+                    try:
+                        advertisers_enriched = enrich_companies(advertisers_using_your_activity_or_information, name_col="advertiser_name")
+                        advertisers_enriched.to_csv("./data/advertisers_enriched.csv")
+                        st.success("✅ Clusters generated successfully!")
+                    except Exception as e:
+                        st.error(f"Error scrapping the datas: {e}")
+    st.info("""
+            **Enrichment sources used:**
+            - **Wikipedia** → to find the most probable page and retrieve the corresponding **Wikidata QID**  
+            - **Wikidata** → to extract structured data such as **country**, **industry**, **headquarters**, **inception**, and **website**  
+            - **Clearbit Autocomplete API** → to infer official **domains/websites** when missing  
+            - **OpenCorporates API** → to identify the company’s **country of registration** when not available elsewhere  
+
+            Data is collected only from **public APIs** with rate limits respected (no scraping).
+            """)
+    if advertisers_enriched is not None :
+        st.subheader("Advertissers vizualisation after enrichement")
+        with st.expander("Show raw datas"):
+            st.subheader("Advertisers after the enrichement")
+            st.write(advertisers_enriched)
+        st.altair_chart(ads_enriched_missing_values(advertisers_enriched))
+        st.altair_chart(ads_countries_map(advertisers_enriched))
+        st.altair_chart(ads_inception_year(advertisers_enriched, signup_details['Time']))
+
+with personal_info_tab:
+    st.header("Personal Information")
+    st.write("What does instagram know about you ?")
+    df_locations_of_interest_prep = preprocess_data(df_locations_of_interest=df_locations_of_interest)
+    df_last_known_location = preprocess_data(df_last_known_location=df_last_known_location)
+    df_devices_prep = preprocess_data(df_devices=df_devices)
+    with st.expander("Show raw data"):
+        st.write("Your devices")
+        st.write(df_devices)
+        st.write("Your cameras informations")
+        st.write(df_camera_info)
+        st.write("Your locations of interest")
+        st.write(df_locations_of_interest)
+        st.write("Your last known locations")
+        st.write(df_last_known_location)
+    with st.expander("Show preprossed data"):
+        st.write("Your devices")
+        st.info("The preprocessing of the devices pandas dataFrame was made possible with the user-agents python librairies.")
+        st.write(df_devices_prep)
+        st.write("Location of interest")
+        st.info("This dataframe was encoded in utf-8. Latitude and longitude were also added thanks to **geopy** librairy")
+        st.write(df_locations_of_interest_prep)
+   
+    col1, col2 = st.columns([1,1], gap="large")
+    with col1:
+        st.write("Your profile is based in :", profile_based_in)
+        st.subheader("Your locations of interest")
+        st.map(df_locations_of_interest_prep)
+        st.subheader("Your last known locations... ")
+        st.map(df_last_known_location)
+
+    with col2:
+        st.subheader("Personal Contact Information")
+        st.write("Your phone number :", signup_details['Phone Number'])
+        st.write("Your email : ", possible_emails)
+        st.subheader("Your devices informations")
+        st.altair_chart(devices_over_times(df_devices_prep))
 
 with security_tab:
     st.header("Security and logs info")
@@ -255,7 +343,8 @@ with security_tab:
         if signup_details.get("Email"): st.write(f"Email: {signup_details['Email']}")
         if signup_details.get("Phone Number"): st.write(f"Phone Number: {signup_details['Phone Number']}")
         if signup_details.get("Device"): st.write(f"Device Name: {signup_details['Device']}")
-        #st.write(signup_details)
+        st.subheader("Recovery contacts")
+        st.write("Contact : ", possible_emails)
         st.subheader("Password change activity")
         st.altair_chart(password_activity_bar(password_change_activity))
     with col2:
@@ -268,25 +357,3 @@ with security_tab:
 
         st.subheader("Cookies Distribution")
         st.altair_chart(cookies_pie(df_logs), use_container_width=True)
-
-
-""" 
-# KPI row
-c1, c2, c3 = st.columns(3)
-c1.metric("KPI 1", "…", "∆ vs. baseline")
-c2.metric("KPI 2", "…")
-c3.metric("KPI 3", "…")
-
-st.subheader("Trends over time")
-line_chart(tables["timeseries"]) # custom function adds consistent styling
-
-st.subheader("Compare regions")
-bar_chart(tables["by_region"])
-
-st.subheader("Map view")
-map_chart(tables["geo"])
-
-st.markdown("### Data Quality & Limitations")
-st.info("Describe missing data, measurement limits, and biases.")
-st.markdown("### Key Insights & Next Steps")
-st.success("Summarize what matters and what actions follow.") """

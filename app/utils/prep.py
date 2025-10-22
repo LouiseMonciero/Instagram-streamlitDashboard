@@ -3,6 +3,8 @@ import pandas as pd
 from urllib.parse import urlparse
 from datetime import datetime
 import re
+from geopy.geocoders import Nominatim
+from user_agents import parse
 
 def date_str(timestamp):
     return datetime.fromtimestamp(timestamp)
@@ -163,11 +165,51 @@ def preprocess_data( df_contacts=None, df_media=None, df_follows=None, df_device
         return {"df": df, "sets_by_type": sets_by_type, "timeseries": daily_full}
     
     if df_devices is not None:
-        pass
+        df = df_devices.copy()
+
+        # Function to parse user agent
+        def extract_user_agent_info(ua_string):
+            ua = parse(ua_string)
+            return pd.Series({
+                'browser_family': ua.browser.family,
+                'browser_version': ua.browser.version_string,
+                'os_family': ua.os.family,
+                'os_version': ua.os.version_string,
+                'device_family': ua.device.family,
+                'is_mobile': ua.is_mobile,
+                'is_tablet': ua.is_tablet,
+                'is_pc': ua.is_pc,
+                'is_bot': ua.is_bot
+            })
+
+        ua_df = df['user_agent'].apply(extract_user_agent_info)
+        df_processed = pd.concat([df, ua_df], axis=1)
+        df_processed['last_login_timestamp'] = df_processed['last_login_timestamp'].apply(date_str)
+        return df_processed
+    
     if df_camera_info is not None:
         pass
     if df_locations_of_interest is not None:
-        pass
+        df = df_locations_of_interest.copy()
+        #df["value"].encode(encoding='utf-8', inplace=True)
+        geolocator = Nominatim(user_agent="insta_dashboard")
+        latitudes, longitudes = [], []
+        for loc in df["value"]:
+            try:
+                location = geolocator.geocode(loc)
+                if location:
+                    latitudes.append(location.latitude)
+                    longitudes.append(location.longitude)
+                else:
+                    latitudes.append(None)
+                    longitudes.append(None)
+            except Exception:
+                latitudes.append(None)
+                longitudes.append(None)
+        df["latitude"] = latitudes
+        df["longitude"] = longitudes
+        return df.dropna(subset=["latitude", "longitude"])
+
     if possible_emails is not None:
         pass
     if profile_based_in is not None:
@@ -189,6 +231,7 @@ def preprocess_data( df_contacts=None, df_media=None, df_follows=None, df_device
         df_link_history["total_time_min"] = (df_link_history["session_end"] - df_link_history["session_start"]).dt.total_seconds() / 60
 
         return df_link_history
+
     if recommended_topics is not None:
         pass
     if signup_details is not None:
@@ -199,5 +242,5 @@ def preprocess_data( df_contacts=None, df_media=None, df_follows=None, df_device
         pass
     if df_logs is not None:
         pass
-    return (df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs)
+    return
 

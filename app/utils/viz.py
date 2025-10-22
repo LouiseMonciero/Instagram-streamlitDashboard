@@ -7,6 +7,12 @@ import altair as alt
 import matplotlib.pyplot as plt
 from matplotlib_venn import venn2, venn3
 
+# ads
+import pandas as pd
+import pycountry
+import altair as alt
+from vega_datasets import data
+
 # ---------- helpers ----------
 def _auto_to_datetime(ts_series: pd.Series) -> pd.Series:
     """Convertit epoch en datetime Europe/Paris. Auto-détection s (<=1e11) vs ms (>1e11)."""
@@ -489,8 +495,222 @@ def website_bar(df_link_history : pd.DataFrame) -> alt.Chart:
     )
     return chart
 
+# --------- ads information -----------
+def ads_bar(df):
+    bars_df = pd.DataFrame({
+        "metric": [
+            "Total advertisers",
+            "has_data_file_custom_audience (True)",
+            "has_remarketing_custom_audience (True)",
+            "has_in_person_store_visit (True)",
+        ],
+        "count": [
+            len(df),
+            int(df["has_data_file_custom_audience"].sum()),
+            int(df["has_remarketing_custom_audience"].sum()),
+            int(df["has_in_person_store_visit"].sum()),
+        ],
+    })
+    bars_df["percent"] = (bars_df["count"] / len(df) * 100).round(1)
+    bars_df["percent_str"] = bars_df["percent"].astype(str) + "%"
+
+    chart = (
+        alt.Chart(bars_df)
+        .mark_bar()
+        .encode(
+            x=alt.X("count:Q", title="Count"),
+            y=alt.Y("metric:N", sort="-x", title=""),
+            tooltip=[
+                alt.Tooltip("metric:N", title="Metric"),
+                alt.Tooltip("count:Q", title="Count"),
+                alt.Tooltip("percent:Q", title="Percent", format=".1f")
+            ],
+        ).properties(
+            title="Instagram Advertiser Audience Features (Counts and %)",
+            width=600,
+            height=220
+        )
+    )
+    return chart
+
+def ads_countries_map(df):
+
+    agg = (
+        df.groupby("country", as_index=False)
+        .size()
+        .rename(columns={"size": "count"})
+    )
+    fix = {
+        "United States": "United States of America",
+        "Czech Republic": "Czechia",
+        "South Korea": "Korea, South",
+        "North Korea": "Korea, North",
+        "Ivory Coast": "Côte d’Ivoire",
+        "Swaziland": "Eswatini",
+        "Macedonia": "North Macedonia",
+        "Myanmar (Burma)": "Myanmar",
+        # cas impossible à faire correspondre sur la carte actuelle
+        "Socialist Federal Republic of Yugoslavia": None,
+    }
+    agg["country"] = (
+        agg["country"]
+        .astype(str).str.strip()
+        .replace(fix)
+    )
+    agg = agg.dropna(subset=["country"]).copy()
+    agg["count"] = agg["count"].astype(int)
+
+    def get_iso_numeric(country_name):
+        try:
+            country = pycountry.countries.lookup(country_name)
+            return int(country.numeric)
+        except LookupError:
+            return None
+
+    agg['id'] = agg['country'].apply(get_iso_numeric)
+
+    countries = alt.topo_feature(data.world_110m.url, 'countries')
+    chart = (
+        alt.Chart(countries)
+        .mark_geoshape(stroke='white', strokeWidth=0.5)
+        .transform_lookup(
+            lookup='id',
+            from_=alt.LookupData(agg, key='id', fields=['country', 'count'])
+        )
+        .encode(
+            color=alt.Color('count:Q', title='Advertisers'),
+            tooltip=[
+                alt.Tooltip('country:N', title='Country'),
+                alt.Tooltip('count:Q', title='Advertisers', format=',')
+            ]
+        )
+        .project('equalEarth')
+        .properties(width=900, height=500, title='Advertisers per country')
+    )
+
+    return chart
+
+def ads_enriched_missing_values(enriched):
+    # compute counts
+    count = enriched.count().reset_index()
+    count.columns = ["column", "count"]
+
+    # add frequency (%)
+    total_rows = len(enriched)
+    pct = (count.loc[count['column'] == 'qid', 'count'].iloc[0] / total_rows) * 100
+    count["freq_percent"] = (count["count"] / total_rows * 100).round(1)
+
+    # build bar chart
+    bar = (
+        alt.Chart(count)
+        .mark_bar(color="#4C78A8")
+        .encode(
+            x=alt.X("column:N", title="Field"),
+            y=alt.Y("count:Q", title="Non-missing values"),
+            tooltip=[
+                alt.Tooltip("column:N", title="Field"),
+                alt.Tooltip("count:Q", title="Count"),
+                alt.Tooltip("freq_percent:Q", title="Frequency (%)"),
+            ]
+        )
+    )
+    rule = alt.Chart(pd.DataFrame({"y": [total_rows]})).mark_rule(color="red").encode(
+        y="y:Q"
+    )
+
+    return (bar + rule).properties(
+        width=600,
+        title=f"Enriched values in the datasets {pct:.2f}%"
+    )
+
+def ads_inception_year(enriched, signup_ts):
+    # -- Extract inception year safely
+    enriched["inception_year"] = pd.to_datetime(
+        enriched["inception"], errors="coerce"
+    ).dt.year
+
+    # -- Aggregate by year and cumulative sum
+    by_year = (
+        enriched.dropna(subset=["inception_year"])
+        .groupby("inception_year")
+        .size()
+        .reset_index(name="count")
+        .sort_values("inception_year")
+    )
+    by_year["cum"] = by_year["count"].cumsum()
+
+    # -- Compute coverage %
+    total_rows = len(enriched)
+    known_rows = int(by_year["count"].sum())
+    missing_rows = total_rows - known_rows
+    by_year["coverage_pct"] = (by_year["cum"] / total_rows * 100).round(1)
+
+    # -- Instagram signup timestamp → year
+    signup_year = pd.to_datetime(signup_ts, unit="s", utc=True).year
+
+    # -- Base chart
+    base = alt.Chart(by_year).encode(
+        x=alt.X("inception_year:Q", title="Inception year", axis=alt.Axis(format="d"))
+    )
+
+    area = base.mark_area(opacity=0.25).encode(
+        y=alt.Y("cum:Q", title="Cumulative companies")
+    )
+
+    line = base.mark_line(color="#4C78A8").encode(y="cum:Q")
+
+    pts = base.mark_circle(size=32, color="#4C78A8").encode(
+        y="cum:Q",
+        tooltip=[
+            alt.Tooltip("inception_year:Q", title="Year"),
+            alt.Tooltip("count:Q", title="New that year"),
+            alt.Tooltip("cum:Q", title="Cumulative"),
+            alt.Tooltip("coverage_pct:Q", title="Coverage (%)")
+        ]
+    )
+
+    # -- Vertical rule for signup date
+    rule = alt.Chart(pd.DataFrame({"x": [signup_year]})).mark_rule(
+        color="red", strokeWidth=2
+    ).encode(x="x:Q")
+
+    # -- Annotation label placed above the plot
+    label = alt.Chart(pd.DataFrame({"x": [signup_year]})).mark_text(
+        text="Instagram signup date",
+        align="center",
+        dy=-150,          # push label higher
+        color="red",
+        fontSize=13,
+        fontWeight="bold"
+    ).encode(x="x:Q")
+
+    # -- Combine layers
+    chart = (area + line + pts + rule + label).properties(
+        width=700,
+        height=380,
+        title=f"Cumulative company inceptions (known={known_rows}, missing={missing_rows}, total={total_rows})"
+    )
+
+    return chart
+
+# ---------- personal information ---------
+
+def plot_locations_map(df):
+    chart = alt.Chart(df).mark_circle(size=100, color="#3182bd", opacity=0.7).encode(
+        longitude="longitude:Q",
+        latitude="latitude:Q",
+        tooltip=["value", "latitude:Q", "longitude:Q"]
+    ).properties(
+        width=700,
+        height=500,
+        title="Locations Map"
+    )
+    return chart
+
 # --------- preferences -------------
 def clusters_podium(clusters_data: list[dict], clusters_compositions: dict) -> alt.Chart:
+    
+    clusters_compositions = {"0":["Crafts","Ground Transportation","Gym Workouts","Body Modification","AR/VR Games","Water Sports","Visual Arts","Beauty Product Types","Technology","Video Games by Game Mechanics","Types of Sports","Beauty Products","Cars & Trucks","Body Art","Interior Design"],"1":["Cosplay"],"2":["Foods","Cakes","Recipes","Desserts"],"3":["Fish","Birds","Wild Cats","Reptiles","Lions","Mammals","Dogs","Aquatic Animals","Animals","Farm Animals","Rabbits","Cats","Pets"],"4":["Drawing & Sketching","Painting","Watercolor Painting"],"5":["Beauty","Makeup","Faces & Face Care","Hair Care"],"6":["Baked Goods","Vacation & Leisure Activities","Asia Travel","Western Europe Travel","Travel Destinations","Europe Travel","Travel by Region"],"7":["Video Games","Anime TV & Movies","Animation TV & Movies","Dance","TV & Movies by Genre","Digital Art","Toys"],"8":["Fashion Products","Fashion","Fashion Styles & Trends","Fashion Media & Entertainment","Clothing & Accessories"],"9":["Non-Alcoholic Beverages","Drinks","Coffee Drinks"]}
     
     # Sort clusters by weights descending and get top 3
     top3 = sorted(clusters_data, key=lambda el: el['weights'], reverse=True)[:3]
@@ -519,6 +739,7 @@ def clusters_podium(clusters_data: list[dict], clusters_compositions: dict) -> a
     return chart
 
 def clusters_grid(clusters_data: list[dict], clusters_compositions: dict) -> alt.Chart:
+    clusters_compositions = {"0":["Crafts","Ground Transportation","Gym Workouts","Body Modification","AR/VR Games","Water Sports","Visual Arts","Beauty Product Types","Technology","Video Games by Game Mechanics","Types of Sports","Beauty Products","Cars & Trucks","Body Art","Interior Design"],"1":["Cosplay"],"2":["Foods","Cakes","Recipes","Desserts"],"3":["Fish","Birds","Wild Cats","Reptiles","Lions","Mammals","Dogs","Aquatic Animals","Animals","Farm Animals","Rabbits","Cats","Pets"],"4":["Drawing & Sketching","Painting","Watercolor Painting"],"5":["Beauty","Makeup","Faces & Face Care","Hair Care"],"6":["Baked Goods","Vacation & Leisure Activities","Asia Travel","Western Europe Travel","Travel Destinations","Europe Travel","Travel by Region"],"7":["Video Games","Anime TV & Movies","Animation TV & Movies","Dance","TV & Movies by Genre","Digital Art","Toys"],"8":["Fashion Products","Fashion","Fashion Styles & Trends","Fashion Media & Entertainment","Clothing & Accessories"],"9":["Non-Alcoholic Beverages","Drinks","Coffee Drinks"]}
     # Check if clusters_compositions is provided and not empty
     if not clusters_compositions:
         raise ValueError("clusters_compositions is missing or empty.")
@@ -578,30 +799,48 @@ def clusters_grid(clusters_data: list[dict], clusters_compositions: dict) -> alt
         title="Clusters grid (3x4)"
     )
 
-def clu_podium():
-    clusters_data = [{"cluster_name":"Body & Games & Sports","weights":15},{"cluster_name":"Cosplay","weights":1},{"cluster_name":"Foods & Cakes & Recipes","weights":4},{"cluster_name":"Animals & Cats & Fish","weights":13},{"cluster_name":"Painting & Drawing","weights":3},{"cluster_name":"Care & Beauty & Makeup","weights":4},{"cluster_name":"Travel & Europe & Baked","weights":7},{"cluster_name":"TV & Movies","weights":7},{"cluster_name":"Fashion & Products","weights":5},{"cluster_name":"Drinks & Non-Alcoholic & Beverages","weights":3}]
-    clusters_compositions = {"0":["Crafts","Ground Transportation","Gym Workouts","Body Modification","AR/VR Games","Water Sports","Visual Arts","Beauty Product Types","Technology","Video Games by Game Mechanics","Types of Sports","Beauty Products","Cars & Trucks","Body Art","Interior Design"],"1":["Cosplay"],"2":["Foods","Cakes","Recipes","Desserts"],"3":["Fish","Birds","Wild Cats","Reptiles","Lions","Mammals","Dogs","Aquatic Animals","Animals","Farm Animals","Rabbits","Cats","Pets"],"4":["Drawing & Sketching","Painting","Watercolor Painting"],"5":["Beauty","Makeup","Faces & Face Care","Hair Care"],"6":["Baked Goods","Vacation & Leisure Activities","Asia Travel","Western Europe Travel","Travel Destinations","Europe Travel","Travel by Region"],"7":["Video Games","Anime TV & Movies","Animation TV & Movies","Dance","TV & Movies by Genre","Digital Art","Toys"],"8":["Fashion Products","Fashion","Fashion Styles & Trends","Fashion Media & Entertainment","Clothing & Accessories"],"9":["Non-Alcoholic Beverages","Drinks","Coffee Drinks"]}
-    top3 = sorted(clusters_data, key=lambda el: el['weights'], reverse=True)[:3]
-    # Assign podium order (1st, 2nd, 3rd)
-    for idx, cluster in enumerate(top3):
-        cluster['order'] = idx + 1
-        # Use index as key for composition
-        comp_key = str(clusters_data.index(cluster))
-        cluster['composition'] = ", ".join(clusters_compositions.get(comp_key, []))
+# ------- devices --------
+def devices_over_times(df_devices_prep:pd.DataFrame) -> alt.Chart:
 
-    podium_df = pd.DataFrame(top3)
-    chart = alt.Chart(podium_df).mark_bar(size=60).encode(
-        x=alt.X("order:O", title="Podium Place", axis=alt.Axis(labelExpr='datum.value == 1 ? "1" : datum.value == 2 ? "2" : "3"')),
-        y=alt.Y("weights:Q", title="Importance of the cluster"),
-        color=alt.Color("order:O", scale=alt.Scale(domain=[1,2,3], range=["#FFD700", "#C0C0C0", "#CD7F32"]), legend=None),
+    rows = []
+    for _, r in df_devices_prep.iterrows():
+        if r['is_pc']:
+            rows.append({'device_type': 'PC', 'last_login': r['last_login_timestamp'],
+                        'os_family': r['os_family'], 'browser_family': r['browser_family'],
+                        'browser_version': r['browser_version']})
+        if r['is_tablet']:
+            rows.append({'device_type': 'Tablet', 'last_login': r['last_login_timestamp'],
+                        'os_family': r['os_family'], 'browser_family': r['browser_family'],
+                        'browser_version': r['browser_version']})
+        if r['is_mobile']:
+            rows.append({'device_type': 'Mobile', 'last_login': r['last_login_timestamp'],
+                        'os_family': r['os_family'], 'browser_family': r['browser_family'],
+                        'browser_version': r['browser_version']})
+
+    df_long = pd.DataFrame(rows)
+
+    # Sort by device and last_login
+    df_long = df_long.sort_values(['device_type', 'last_login']).reset_index(drop=True)
+
+    # Compute start time per device as the last login of the previous row of the same device
+    df_long['start'] = df_long.groupby('device_type')['last_login'].shift(1)
+    df_long['start'] = df_long['start'].fillna(df_long['last_login'] - pd.Timedelta(days=1))  # default 1 day before
+
+    # Altair timeline plot
+    chart = alt.Chart(df_long).mark_bar().encode(
+        y=alt.Y('device_type:N', title='Device'),
+        x=alt.X('start:T', title='Start'),
+        x2=alt.X2('last_login:T', title='End'),
+        color=alt.Color('os_family:N', title='OS Family'),
         tooltip=[
-            alt.Tooltip("cluster_name:N", title="Cluster Name"),
-            alt.Tooltip("weights:Q", title="Number of categories in cluster"),
-            alt.Tooltip("composition:N", title="Cluster Categories"),
-        ],
+            alt.Tooltip('os_family:N', title='OS Device'),
+            alt.Tooltip('browser_family:N', title='Browser'),
+            alt.Tooltip('browser_version:N', title='Version'),
+            alt.Tooltip('last_login:T', title='End'),
+        ]
     ).properties(
-        title="Podium: Top 3 Clusters",
-        width=400,
-        height=350
+        width=800,
+        height=200
     )
+
     return chart

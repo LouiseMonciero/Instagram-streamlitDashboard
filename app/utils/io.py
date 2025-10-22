@@ -6,6 +6,7 @@ import re
 from dotenv import load_dotenv
 load_dotenv()
 DATA_PATH = os.getenv("DATA_PATH")
+HEADERS = os.getenv("HEADERS")
 
 def load_data():
     # --- contacts ---
@@ -226,8 +227,8 @@ def load_data():
     df_last_known_location = pd.DataFrame([{
         "imprecise_latitude": location_info["Imprecise Latitude"]["value"],
         "imprecise_longitude": location_info["Imprecise Longitude"]["value"],
-        "precise_latitude": location_info["Precise Latitude"]["value"],
-        "precise_longitude": location_info["Precise Longitude"]["value"],
+        "lat": location_info["Precise Latitude"]["value"],
+        "longitude": location_info["Precise Longitude"]["value"],
         "gps_time_uploaded": location_info["GPS Time Uploaded"]["timestamp"]
     }])
 
@@ -256,7 +257,92 @@ def load_data():
 
     df_logs = pd.concat([df_login, df_logout], ignore_index=True)
 
-    return (df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs)
+    # ---- ads infos -----
+    advertisers_enriched = pd.read_csv('./data/advertisers_enriched.csv')
+
+    videos_watched = pd.json_normalize(
+        data = json.load(open(DATA_PATH+'/ads_information/ads_and_topics/videos_watched.json'))['impressions_history_videos_watched'],
+        sep='.'
+    )
+
+    videos_watched = videos_watched.rename(columns={
+        'string_map_data.Author.value': 'author',
+        'string_map_data.Time.timestamp': 'timestamp'
+    })[['author', 'timestamp']]
+    videos_watched['ads_type'] = 'videos_watched'
+
+    suggested_profiles_viewed = pd.json_normalize(
+        data = json.load(open(DATA_PATH+'/ads_information/ads_and_topics/suggested_profiles_viewed.json'))['impressions_history_chaining_seen'],
+        sep='.'
+    )
+    suggested_profiles_viewed = suggested_profiles_viewed.rename(columns={
+        'string_map_data.Username.value': 'username',
+        'string_map_data.Time.timestamp': 'timestamp'
+    })[['username', 'timestamp']]
+    suggested_profiles_viewed['ads_type'] = 'suggested_profiles'
+    suggested_profiles_viewed = suggested_profiles_viewed.rename(columns={'username': 'author'})
+
+    posts_viewed = pd.json_normalize(
+        data = json.load(open(DATA_PATH+'/ads_information/ads_and_topics/posts_viewed.json'))['impressions_history_posts_seen'],
+        sep='.'
+    )
+    posts_viewed = posts_viewed.rename(columns={
+        'string_map_data.Author.value': 'author',
+        'string_map_data.Time.timestamp': 'timestamp'
+    })[['author', 'timestamp']]
+    posts_viewed['ads_type'] = 'posts'
+
+    ads_clicked = pd.json_normalize(
+        data=json.load(open(
+            DATA_PATH+'/ads_information/ads_and_topics/ads_clicked.json'
+        ))['impressions_history_ads_clicked'],
+        sep='.'
+    )
+    ads_clicked['timestamp'] = ads_clicked['string_list_data'].apply(lambda x: x[0]['timestamp'])
+    ads_clicked = ads_clicked.drop(columns=['string_list_data'])
+    ads_clicked = ads_clicked.rename(columns={'title': 'author'})
+    ads_clicked['ads_type'] = 'clicked'
+
+    ads_viewed = pd.json_normalize(
+        data = json.load(open(DATA_PATH+'/ads_information/ads_and_topics/ads_viewed.json'))['impressions_history_ads_seen'],
+        sep='.'
+    )
+    ads_viewed = ads_viewed.rename(columns={
+        'string_map_data.Author.value': 'author',
+        'string_map_data.Time.timestamp': 'timestamp'
+    })[['author', 'timestamp']]
+    ads_viewed['ads_type'] = 'viewed'
+
+    df_all_ads = pd.concat(
+        [
+            videos_watched[['author', 'timestamp', 'ads_type']],
+            suggested_profiles_viewed[['author', 'timestamp', 'ads_type']],
+            posts_viewed[['author', 'timestamp', 'ads_type']],
+            ads_clicked[['author', 'timestamp', 'ads_type']],
+            ads_viewed[['author', 'timestamp', 'ads_type']]
+        ],
+        ignore_index=True
+    )
+
+    df_all_ads['date'] = (
+        pd.to_datetime(df_all_ads['timestamp'], unit='s', utc=True)
+        .dt.tz_convert('Europe/Paris')
+    )
+
+    information_youve_submitted_to_advertisers = json.load(open(DATA_PATH+"/ads_information/instagram_ads_and_businesses/information_you've_submitted_to_advertisers.json"))['ig_lead_gen_info']
+    substriction_status = json.load(open(DATA_PATH+'/ads_information/instagram_ads_and_businesses/subscription_for_no_ads.json'))['label_values'][0]['value']
+
+    advertisers_using_your_activity_or_information = pd.json_normalize(
+            data = json.load(open(DATA_PATH+'/ads_information/instagram_ads_and_businesses/advertisers_using_your_activity_or_information.json')),
+            record_path=['ig_custom_audiences_all_types'],
+            errors='ignore'
+    )
+
+    data = json.load(open(DATA_PATH+'/ads_information/instagram_ads_and_businesses/other_categories_used_to_reach_you.json'))
+    other_categories_used_to_reach_you = [item["value"] for item in data["label_values"][0]["vec"]]
+
+
+    return (df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs, df_all_ads, substriction_status, information_youve_submitted_to_advertisers, advertisers_using_your_activity_or_information, other_categories_used_to_reach_you, advertisers_enriched)
 
 def fetch_and_cache():
     return

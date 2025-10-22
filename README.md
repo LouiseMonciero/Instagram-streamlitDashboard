@@ -10,6 +10,10 @@ Understand what Meta knows about you. This streamlit dashboard helps visualize y
 
 ```.env
 DATA_PATH = './data/name_of_your_folder'
+HEADERS = {
+    # add a real contact if you can (policy requirement)
+    "User-Agent": "Lou-CompanyEnricher/0.1 (contact: you@example.com)"
+}
 ```
 
 ## Installation complète
