@@ -9,7 +9,7 @@ from user_agents import parse
 def date_str(timestamp):
     return datetime.fromtimestamp(timestamp)
 
-def preprocess_data( df_contacts=None, df_media=None, df_follows=None, df_devices=None, df_camera_info=None, df_locations_of_interest=None, possible_emails=None, profile_based_in=None, df_link_history=None, recommended_topics=None, signup_details=None, password_change_activity=None, df_last_known_location=None, df_logs=None):
+def preprocess_data( df_contacts=None, df_media=None, df_follows=None, df_devices=None, df_camera_info=None, df_locations_of_interest=None, possible_emails=None, profile_based_in=None, df_link_history=None, recommended_topics=None, signup_details=None, password_change_activity=None, df_last_known_location=None, df_logs=None, df_time_spent_on_ig=None):
     if df_contacts is not None:
         df = df_contacts.copy()
         df.columns = [c.strip().replace("string_map_data_", "").replace("_value", "") for c in df.columns]
@@ -189,6 +189,7 @@ def preprocess_data( df_contacts=None, df_media=None, df_follows=None, df_device
     
     if df_camera_info is not None:
         pass
+    
     if df_locations_of_interest is not None:
         df = df_locations_of_interest.copy()
         #df["value"].encode(encoding='utf-8', inplace=True)
@@ -215,22 +216,23 @@ def preprocess_data( df_contacts=None, df_media=None, df_follows=None, df_device
     if profile_based_in is not None:
         pass
     if df_link_history is not None:
-        df_link_history["Website_name"] = df_link_history["Website_link_you_visited"].apply(
+        df = df_link_history.copy()
+        df["Website_name"] = df["Website_link_you_visited"].apply(
             lambda x: urlparse(x).netloc if pd.notna(x) else None
         )
-        df_link_history["session_start"] = pd.to_datetime(
-        df_link_history["Website session start time"],
+        df["session_start"] = pd.to_datetime(
+        df["Website session start time"],
             format="%b %d, %Y %I:%M:%S%p"
         )
 
-        df_link_history["session_end"] = pd.to_datetime(
-            df_link_history["Website session end time"],
+        df["session_end"] = pd.to_datetime(
+            df["Website session end time"],
             format="%b %d, %Y %I:%M:%S%p"
         )
 
-        df_link_history["total_time_min"] = (df_link_history["session_end"] - df_link_history["session_start"]).dt.total_seconds() / 60
+        df["total_time_min"] = (df["session_end"] - df["session_start"]).dt.total_seconds() / 60
 
-        return df_link_history
+        return df
 
     if recommended_topics is not None:
         pass
@@ -242,6 +244,20 @@ def preprocess_data( df_contacts=None, df_media=None, df_follows=None, df_device
         pass
     if df_logs is not None:
         pass
+    
+    if df_time_spent_on_ig is not None:
+        df = df_time_spent_on_ig.copy()
+        df["start_time"] = pd.to_datetime(df["start_time"], errors="coerce", utc=True)
+        df["end_time"] = pd.to_datetime(df["end_time"], errors="coerce", utc=True)
+        df["duration_sec"] = pd.to_numeric(df["duration_sec"], errors="coerce").fillna(0)
+        
+        df["date"] = df["start_time"].dt.date
+        df["date"] = pd.to_datetime(df["date"])
+        
+        df["duration_min"] = df["duration_sec"] / 60.0
+        
+        return df
+    
     return
 
 def count_user_messages(df_all_conversations: pd.DataFrame) -> tuple:

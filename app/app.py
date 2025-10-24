@@ -1,8 +1,8 @@
 import streamlit as st
 from math import ceil
+from pathlib import Path
 from utils.io import load_data, DATA_PATH
 from utils.prep import preprocess_data, date_str, count_user_messages
-# Import lazy - w2v_model ne chargera gensim que lors de l'appel à generate_clusters
 from utils.w2v_model import generate_clusters
 from utils.data_enrichement import enrich_companies
 from utils.viz.activities import total_activities_over_time, plot_duo_participation, group_vs_duo_conv_pie, plot_duo_reel_vs_nonreel, request_corr0, scroll_hist, saved_media_by_time, website_bar
@@ -14,29 +14,38 @@ from utils.viz.connections import upset, plot_venn, plot_follow_time_series_alta
 from utils.viz.personal_info import devices_over_times
 
 st.set_page_config(page_title="Data Storytelling Dashboard", layout="wide")
-@st.cache_data(show_spinner=False)
 
+@st.cache_data(show_spinner="Loading your data...")
 def get_data():
     return load_data()
 
-st.title("Personal Instagram Dashboard !")
-
-with st.spinner("Loading your data...", show_time=True):
-    (df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs, df_all_ads, substriction_status, information_youve_submitted_to_advertisers, advertisers_using_your_activity_or_information, other_categories_used_to_reach_you, advertisers_enriched,
-            df_all_comments, df_liked_comments, df_liked_posts, df_all_conversations,
-            df_time_spent_on_ig, df_your_information_download_requests, 
-            df_saved_collections, df_saved_locations, df_saved_posts, df_saved_music,
-            df_story_likes) = get_data()
-
-with st.spinner("Preprocessing your data...", show_time=True):
+@st.cache_data(show_spinner="Preprocessing your data...")
+def preprocess_all_data(df_follows, df_contacts, df_media, df_link_history, df_locations_of_interest, df_last_known_location, df_devices, df_all_conversations, df_time_spent_on_ig):
+    """Cache preprocessing to avoid re-execution on every interaction"""
     clean_follows = preprocess_data(df_follows=df_follows)
     clean_contacts = preprocess_data(df_contacts=df_contacts)
     df_media_prep = preprocess_data(df_media=df_media)
     df_link_history_prep = preprocess_data(df_link_history=df_link_history)
     df_locations_of_interest_prep = preprocess_data(df_locations_of_interest=df_locations_of_interest)
-    df_last_known_location = preprocess_data(df_last_known_location=df_last_known_location)
+    df_last_known_location_prep = preprocess_data(df_last_known_location=df_last_known_location)
     df_devices_prep = preprocess_data(df_devices=df_devices)
+    df_time_spent_on_ig_prep = preprocess_data(df_time_spent_on_ig=df_time_spent_on_ig)
     messages_sent, messages_received = count_user_messages(df_all_conversations)
+    return clean_follows, clean_contacts, df_media_prep, df_link_history_prep, df_locations_of_interest_prep, df_last_known_location_prep, df_devices_prep, df_time_spent_on_ig_prep, messages_sent, messages_received
+
+st.title("Personal Instagram Dashboard")
+
+# Load data (spinner handled by @st.cache_data decorator)
+(df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs, df_all_ads, substriction_status, information_youve_submitted_to_advertisers, advertisers_using_your_activity_or_information, other_categories_used_to_reach_you, advertisers_enriched,
+        df_all_comments, df_liked_comments, df_liked_posts, df_all_conversations,
+        df_time_spent_on_ig, df_your_information_download_requests, 
+        df_saved_collections, df_saved_locations, df_saved_posts, df_saved_music,
+        df_story_likes) = get_data()
+
+# Preprocess data (spinner handled by @st.cache_data decorator)
+clean_follows, clean_contacts, df_media_prep, df_link_history_prep, df_locations_of_interest_prep, df_last_known_location, df_devices_prep, df_time_spent_on_ig_prep, messages_sent, messages_received = preprocess_all_data(
+    df_follows, df_contacts, df_media, df_link_history, df_locations_of_interest, df_last_known_location, df_devices, df_all_conversations, df_time_spent_on_ig
+)
 
 home, connections_tab, media_tab, preferences_tab, activity_tab, ads_tab, personal_info_tab, security_tab = st.tabs(["Welcome !", "Connections", "Media", "Preferences","Your activity", 'Ads Info', "Personnal Information", "Security Insights"])
 
@@ -45,10 +54,74 @@ with st.sidebar:
     st.header("Filters")
     date_range = st.date_input("Date range", [])
 
-with home :
-    st.write("IDK what to put here....")
+with home:
+    st.markdown("""
+    ### Welcome to your personal Instagram data analysis platform!
+    
+    This interactive dashboard helps you visualize and understand what Meta knows about you through your Instagram data.
+    Explore your connections, media, preferences, activities, ads exposure, and more with dynamic visualizations and minimal machine learning.
+    """)
+    
+    st.subheader("Project Overview")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("📁 Data Folder Size", f"{sum(f.stat().st_size for f in Path(DATA_PATH).rglob('*') if f.is_file()) / (1024**2):.1f} MB")
+    
+    with col2:
+        total_files = len(list(Path(DATA_PATH).rglob('*')))
+        st.metric("Total Files", f"{total_files}")
+    
+    with col3:
+        image_files = len([f for f in Path(DATA_PATH).rglob('*') if f.suffix.lower() in ['.jpg', '.jpeg', '.png']])
+        st.metric("Images", f"{image_files}")
+    
+
+    # Technologies Used
+    st.subheader("🛠️ Technologies & Libraries")
+    tech_col1, tech_col2, tech_col3 = st.columns(3)
+    
+    with tech_col1:
+        st.markdown("""
+        **Data & Visualization**
+        - `streamlit` - Interactive dashboards
+        - `pandas` - Data manipulation
+        - `altair` - Declarative visualizations
+        - `matplotlib` - Plotting library
+        """)
+    
+    with tech_col2:
+        st.markdown("""
+        **Machine Learning**
+        - `gensim` - Word2Vec clustering
+        - `scikit-learn` - ML algorithms
+        - `numpy` - Numerical computing
+        """)
+    
+    with tech_col3:
+        st.markdown("""
+        **Utilities**
+        - `geopy` - Geocoding locations
+        - `python-dotenv` - Environment config
+        - `matplotlib-venn` - Venn diagrams
+        """)
+    
+    # How to use
+    st.subheader("How to Use This Dashboard")
+    st.markdown("""
+    1. **Connections**: Explore your followers, followings, and contacts relationships
+    2. **Media**: Analyze your posts, stories, and media consumption patterns
+    3. **Preferences**: Discover your interests through ML clustering
+    4. **Your Activity**: Track your interactions, messages, and time spent
+    5. **Ads Info**: Understand what advertisers know about you
+    6. **Personal Information**: Review your devices, locations, and account details
+    7. **Security Insights**: Monitor login activities and security events
+    """)
+    
+    st.info("💡 **Tip**: Use the sidebar filters to refine your analysis by date range.")
 
 with connections_tab:
+    
     st.header("Connections")
     with st.expander("Show raw datas"):
         st.write("Followers and Following")
@@ -61,14 +134,14 @@ with connections_tab:
     with col1:
         st.subheader("Follows intersect")
         
-        # --- contrôles ---
+        # --- controlers ---
         all_groups = sorted(clean_follows["sets_by_type"].keys())
         default_groups = [g for g in ["followings", "followers", "close_friends"] if g in all_groups]
         selected_groups = st.multiselect(
             "Groups for either Venn of UpSet diagram", options=all_groups, default=default_groups
         )
 
-        sets_by_type = clean_follows["sets_by_type"]  # single source of truth
+        sets_by_type = clean_follows["sets_by_type"]
         selected = selected_groups if selected_groups else [
             g for g in ["followings", "followers", "close_friends"] if g in sets_by_type
         ]
@@ -94,8 +167,6 @@ with connections_tab:
         st.subheader("Followers / Followings accross time")
         mode = st.radio("Mode", ["Cumulative", "Dayly"], horizontal=True)
         cum = (mode == "Cumulative")
-        #fig2 = plot_follow_time_series(clean["timeseries"], cumulative=cum,
-                                    #title="Cumul des ajouts" if cum else "Ajouts quotidiens")
         chart2 = plot_follow_time_series_altair(clean_follows["timeseries"], cumulative=cum)
         if chart2:
             st.altair_chart(chart2, use_container_width=True)
@@ -155,7 +226,14 @@ with media_tab:
 
 # ------------gallery ---------------
     st.header("Gallery")
+    
+    if 'show_gallery' not in st.session_state:
+        st.session_state['show_gallery'] = False
+    
     if st.button("Load your gallery !", type="primary"):
+        st.session_state['show_gallery'] = True
+    
+    if st.session_state['show_gallery']:
         controls = st.columns(4)
         with controls[0]:
             media_types = st.multiselect("Media Types", ["Posts", "Stories", "Archived Posts", "Deleted"], default=["Posts", "Stories"])
@@ -172,46 +250,42 @@ with media_tab:
                 key='date_range'
             )
             # Filter df_media_prep based on selected_range
-            df_media_prep = df_media_prep[
+            df_media_prep_filtered = df_media_prep[
                 (df_media_prep['timestamp'] >= selected_range[0]) &
                 (df_media_prep['timestamp'] <= selected_range[1])
             ]
         with controls[2]:
             batch_size = st.select_slider("Batch size:", range(10, 110, 10), key='batch_slider')
-        num_batches = ceil(len(df_media) / batch_size)
+        num_batches = ceil(len(df_media_prep_filtered) / batch_size)
 
         with controls[3]:
             page = st.selectbox("Page", range(1, num_batches + 1), key='page')
 
-        # Update function when checkbox or label changes
+
         def update(image, col):
-            df_media_prep.at[image, col] = st.session_state[f'{col}_{image}']
+            df_media_prep_filtered.at[image, col] = st.session_state[f'{col}_{image}']
             if st.session_state[f'incorrect_{image}'] == False:
                 st.session_state[f'label_{image}'] = ''
-                df_media_prep.at[image, 'label'] = ''
+                df_media_prep_filtered.at[image, 'label'] = ''
 
-        # Select the batch of files based on the page
-        batch = df_media_prep[(page - 1) * batch_size : page * batch_size]
-
-        # Create a grid of columns for the display
-        row_size = 4  # Adjust based on how many columns you want to display per row
+        batch = df_media_prep_filtered[(page - 1) * batch_size : page * batch_size]
+        row_size = 4
         grid = st.columns(row_size)
         col = 0
 
 
         # Loop over the batch and display images/videos
-        for _, media in batch.iterrows():  # Use iterrows() to iterate over the rows
+        for _, media in batch.iterrows():
             media_path = media['relative_path']
             media_ext = media['ext']
-            media_file = f'{DATA_PATH}/media/{media_path}'  # Adjust to your actual directory path
-
+            media_file = f'{DATA_PATH}/media/{media_path}'
             with grid[col]:
-                if media_ext in ['jpg', 'jpeg', 'png']:  # Image handling
+                if media_ext in ['jpg', 'jpeg', 'png']:
                     st.image(media_file, caption='Media')
-                elif media_ext == 'mp4':  # Video handling
+                elif media_ext == 'mp4':
                     st.video(media_file)
 
-            col = (col + 1) % row_size  # Move to the next column
+            col = (col + 1) % row_size
 
 with activity_tab:
     st.header("Your activity")
@@ -238,8 +312,16 @@ with activity_tab:
         st.write(df_saved_music)
         st.subheader("Story liked")
         st.write(df_story_likes)
+        st.write("Link history")
+        st.write(df_link_history)
     with st.expander("Show preprocessed datas"):
-        st.write("It empty here .... ") # encode differently pleeeeeease !!!
+        st.subheader("Link history")
+        st.info("This preprocessing extracts the website name from URLs and calculates session duration in minutes.")
+        st.write(df_link_history_prep)
+        
+        st.subheader("Time spent on Instagram")
+        st.info("This preprocessing converts timestamps, adds date column, and calculates duration in minutes for easier analysis.")
+        st.write(df_time_spent_on_ig_prep)
     
     st.subheader("Overview")
     c1, c2, c3, c4 = st.columns(4)
@@ -250,12 +332,11 @@ with activity_tab:
 
     c21, c22, c23, c24 = st.columns(4)
     c21.metric("Messages sent", f"{messages_sent}")
-    c22.metric("Messages received", f"{messages_received}"),
+    c22.metric("Messages received", f"{messages_received}")
     c23.metric("Comments", f"{len(df_all_comments)}")
     c24.metric("Times you downloaded your datas", f"{len(df_your_information_download_requests)}")
 
-    st.subheader("Your activities over time")
-    st.subheader("Activities across time")
+    st.subheader("Your activities across time")
     mode = st.radio("Mode", ["Cumulative", "Monthly"], horizontal=True)
     cum = (mode == "Cumulative")
     monthly = (mode == "Monthly")
@@ -270,7 +351,8 @@ with activity_tab:
         cumulative=cum,
         monthly=True,
         title="Activities over time",
-        use_log_y=True
+        use_log_y=True,
+        date_range=date_range
     )
     st.altair_chart(chart, use_container_width=True)
 
@@ -300,10 +382,10 @@ with activity_tab:
     
 
     st.subheader("Time spent on instagram")
-    #st.altair_chart(scroll_hist(df_time_spent_on_ig))
+    st.altair_chart(scroll_hist(df_time_spent_on_ig_prep, date_range=date_range), use_container_width=True)
 
     st.subheader("Saved informations")
-    by_saved = st.radio("Grouped by :", ["years","months","weeks"], index=1, horizontal=True, key="saved_hist")
+    by_saved = st.radio("Grouped by :", ["days","months","weeks"], index=1, horizontal=True, key="saved_hist")
     st.altair_chart(saved_media_by_time(df_saved_collections, df_saved_posts, df_saved_music, by_saved))
     saved_c1, saved_c2, saved_c3 = st.columns(3)
     with saved_c1:
@@ -315,7 +397,7 @@ with activity_tab:
         st.write()
 
     st.subheader("Link history")
-    st.altair_chart(website_bar(df_link_history))
+    st.altair_chart(website_bar(df_link_history_prep))
 
 with preferences_tab:
     st.header("Your recommended topics")
@@ -458,5 +540,9 @@ with security_tab:
 
         st.subheader("Cookies Distribution")
         st.altair_chart(cookies_pie(df_logs), use_container_width=True)
+
+st.markdown("---")
+st.caption("This dashboard respects your privacy - all data processing happens locally on your machine.")
+st.caption("This dashboard was vibecoded with [chatGPT-5](https://chatgpt.com/), [Claude Sonnet 4.5](https://claude.ai/) and [DeepSeek](https://chat.deepseek.com/)")
 
 st.caption("Source: [Account Center - Instagram](https://accountscenter.instagram.com/info_and_permissions/dyi/?theme=dark)")

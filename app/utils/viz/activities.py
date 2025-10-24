@@ -5,6 +5,32 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 
+# ------- Helper functions --------
+
+def filter_by_date_range(df: pd.DataFrame, date_column: str, date_range: tuple) -> pd.DataFrame:
+    """
+    Filter a dataframe by date range without modifying the original.
+    
+    Args:
+        df: DataFrame to filter
+        date_column: Name of the date column
+        date_range: Tuple of (start_date, end_date)
+    
+    Returns:
+        Filtered DataFrame copy
+    """
+    if not date_range or len(date_range) != 2:
+        return df
+    
+    df_filtered = df.copy()
+    start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+    
+    # Ensure the date column is datetime
+    if not pd.api.types.is_datetime64_any_dtype(df_filtered[date_column]):
+        df_filtered[date_column] = pd.to_datetime(df_filtered[date_column], errors='coerce')
+    
+    return df_filtered[(df_filtered[date_column] >= start_date) & (df_filtered[date_column] <= end_date)]
+
 # ------- activities --------
 
 def total_activities_over_time(
@@ -17,7 +43,8 @@ def total_activities_over_time(
     cumulative: bool = True,
     monthly: bool = True,  # True = agrégation par mois, False = par jour
     title: str = "Total Instagram Activities Over Time",
-    use_log_y: bool = True
+    use_log_y: bool = True,
+    date_range: tuple = None
 ):
     """
     Altair line chart showing activity over time (cumulative or per period),
@@ -70,6 +97,10 @@ def total_activities_over_time(
         .dropna(subset=["date"])
         .assign(date=lambda d: d["date"].dt.tz_convert("Europe/Paris"))
     )
+    
+    # Apply date range filter if provided
+    if date_range:
+        all_data = filter_by_date_range(all_data, "date", date_range)
 
     # --- Choose granularity: month or day ---
     freq = "M" if monthly else "D"
@@ -489,8 +520,42 @@ def request_corr0(df_all_conversations: pd.DataFrame) -> plt.Figure:
     return fig
 
 
-def scroll_hist(df_time_spent_on_ig: pd.DataFrame) -> altair.Chart :
-    return
+def scroll_hist(df_time_spent_on_ig_prep: pd.DataFrame, color: str = "blues", date_range: tuple = None) -> alt.Chart:
+    """
+    Histogram of total time spent on Instagram grouped by day.
+    Assumes the dataframe is already preprocessed with 'date' and 'duration_sec' columns.
+    
+    Args:
+        df_time_spent_on_ig_prep: Preprocessed dataframe
+        color: Color scheme for the bars
+        date_range: Optional tuple of (start_date, end_date) to filter data
+    """
+    df = df_time_spent_on_ig_prep.copy()
+    
+    # Apply date range filter if provided
+    if date_range and len(date_range) == 2:
+        start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+        df = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
+    
+    daily_time = df.groupby("date", as_index=False)["duration_sec"].sum()
+    daily_time["duration_min"] = daily_time["duration_sec"] / 60
+    
+    chart = (
+        alt.Chart(daily_time)
+        .mark_bar()
+        .encode(
+            x=alt.X("date:T", title="Date"),
+            y=alt.Y("duration_min:Q", title="Minutes on Instagram"),
+            color=alt.Color("duration_min:Q", scale=alt.Scale(scheme="blues")),
+            tooltip=[
+                alt.Tooltip("date:T", title="Date", format="%Y-%m-%d"),
+                alt.Tooltip("duration_min:Q", title="Minutes", format=".1f"),
+            ],
+        )
+        .properties(title="Time Spent on Instagram per Day", width=800, height=400)
+    )
+
+    return chart
 
 
 def saved_media_by_time(saved_collections: pd.DataFrame, saved_posts: pd.DataFrame, saved_music: pd.DataFrame, by_saved: str) -> alt.Chart:
