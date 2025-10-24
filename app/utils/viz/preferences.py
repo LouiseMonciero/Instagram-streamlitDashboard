@@ -43,6 +43,7 @@ def clusters_grid(clusters_data: list[dict], clusters_compositions: dict) -> alt
     n_cols = 4
     n_rows = 3
     grid_data = []
+    
     for idx, cluster in enumerate(clusters_data[:max_clusters]):
         cluster_name = cluster.get('cluster_name', f"Cluster {idx}")
         categories = clusters_compositions.get(str(idx), [])
@@ -50,45 +51,79 @@ def clusters_grid(clusters_data: list[dict], clusters_compositions: dict) -> alt
             categories = ["(aucune catégorie)"]
         col = idx % n_cols
         row = idx // n_cols
-        for cat in categories:
+        
+        # Create one entry per category with its position in the list
+        for cat_idx, cat in enumerate(categories):
             grid_data.append({
                 "cluster_name": cluster_name,
                 "category": cat,
                 "col": col,
                 "row": row,
+                "cat_idx": cat_idx,  # Position of category within cluster
                 "weight": cluster.get('weights', 0)
             })
+    
     df = pd.DataFrame(grid_data)
-    # Nom du cluster en plus gros, catégories en plus petit
-    chart = alt.Chart(df).mark_text(fontSize=14).encode(
-        x=alt.X('col:O', title=None, axis=None),
-        y=alt.Y('row:O', title=None, axis=None),
-        text='category:N',
-        color=alt.Color('cluster_name:N', legend=None),
-        tooltip=[
-            alt.Tooltip('cluster_name:N', title='Cluster'),
-            alt.Tooltip('category:N', title='Category'),
-        ]
-    )
-    # Ajoute le nom du cluster en plus gros au-dessus de chaque case
-    cluster_labels = pd.DataFrame({
+    
+    # Create background rectangles for each cluster cell
+    cluster_bg = pd.DataFrame({
         "col": [i % n_cols for i in range(min(len(clusters_data), max_clusters))],
         "row": [i // n_cols for i in range(min(len(clusters_data), max_clusters))],
         "cluster_name": [c.get('cluster_name', f"Cluster {i}") for i, c in enumerate(clusters_data[:max_clusters])],
         "weight": [c.get('weights', 0) for c in clusters_data[:max_clusters]]
     })
-    label_chart = alt.Chart(cluster_labels).mark_text(fontSize=22, fontWeight="bold", dy=-60).encode(
+    
+    # Background rectangles
+    bg_chart = alt.Chart(cluster_bg).mark_rect(
+        stroke='white',
+        strokeWidth=2,
+        opacity=0.1
+    ).encode(
         x=alt.X('col:O', title=None, axis=None),
         y=alt.Y('row:O', title=None, axis=None),
-        text='cluster_name:N',
         color=alt.Color('cluster_name:N', legend=None),
         tooltip=[
             alt.Tooltip('cluster_name:N', title='Cluster'),
             alt.Tooltip('weight:Q', title='Weight'),
         ]
     )
-    return (label_chart + chart).properties(
-        width=900,
-        height=700,
+    
+    # Cluster name labels (big and bold at the top)
+    label_chart = alt.Chart(cluster_bg).mark_text(
+        fontSize=20,
+        fontWeight="bold",
+        dy=-120,  # Move up
+        align='center'
+    ).encode(
+        x=alt.X('col:O', title=None, axis=None),
+        y=alt.Y('row:O', title=None, axis=None),
+        text='cluster_name:N',
+        color=alt.Color('cluster_name:N', legend=None)
+    )
+    
+    # Categories text - each category on its own line
+    categories_chart = alt.Chart(df).mark_text(
+        fontSize=11,
+        align='center',
+        baseline='middle',
+        dy=0
+    ).encode(
+        x=alt.X('col:O', title=None, axis=None),
+        y=alt.Y('row:O', title=None, axis=None),
+        text='category:N',
+        color=alt.Color('cluster_name:N', legend=None),
+        # Use cat_idx to offset each category vertically
+        yOffset=alt.YOffset('cat_idx:Q', scale=alt.Scale(domain=[0, 15], range=[-80, 100])),
+        tooltip=[
+            alt.Tooltip('cluster_name:N', title='Cluster'),
+            alt.Tooltip('category:N', title='Category'),
+        ]
+    )
+    
+    return (bg_chart + label_chart + categories_chart).properties(
+        width=1000,
+        height=800,
         title="Clusters grid (3x4)"
+    ).configure_view(
+        strokeWidth=0
     )

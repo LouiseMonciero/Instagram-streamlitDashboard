@@ -79,7 +79,7 @@ with home:
 
     # Technologies Used
     st.subheader("🛠️ Technologies & Libraries")
-    tech_col1, tech_col2, tech_col3 = st.columns(3)
+    tech_col1, tech_col2 = st.columns(2)
     
     with tech_col1:
         st.markdown("""
@@ -98,12 +98,23 @@ with home:
         - `numpy` - Numerical computing
         """)
     
+    tech_col3, tech_col4 = st.columns(2)
+    
     with tech_col3:
         st.markdown("""
         **Utilities**
         - `geopy` - Geocoding locations
         - `python-dotenv` - Environment config
         - `matplotlib-venn` - Venn diagrams
+        """)
+
+    with tech_col4:
+        st.markdown("""
+        **Data Enrichment APIs**
+        - `Wikidata` - Structured company data
+        - `Wikipedia` - Entity identification
+        - `Clearbit` - Domain inference
+        - `OpenCorporates` - Business registry
         """)
     
     # How to use
@@ -167,7 +178,7 @@ with connections_tab:
         st.subheader("Followers / Followings accross time")
         mode = st.radio("Mode", ["Cumulative", "Dayly"], horizontal=True)
         cum = (mode == "Cumulative")
-        chart2 = plot_follow_time_series_altair(clean_follows["timeseries"], cumulative=cum)
+        chart2 = plot_follow_time_series_altair(clean_follows["timeseries"], cumulative=cum, date_range=date_range)
         if chart2:
             st.altair_chart(chart2, use_container_width=True)
 
@@ -201,7 +212,7 @@ with media_tab:
         st.write(df_media)
     with st.expander("Show preprocessed data"):
         st.write("Media")
-        st.write("This preprocessing step standardizes the media dataset and reconstructs missing information from the file paths." \
+        st.info("This preprocessing step standardizes the media dataset and reconstructs missing information from the file paths." \
             "When only the relative_path is available, the script automatically extracts the media type (e.g. posts, stories, reels), the year, the month, and a normalized timestamp from the folder structure. " \
             "It also adds helper columns such as filename, extension, and a year_month date to make temporal analysis easier.")
         st.write(df_media_prep)
@@ -210,19 +221,19 @@ with media_tab:
     col1, col2 = st.columns([1,1], gap="large")
     with col1 : 
         st.subheader("Posting over the years")
-        st.altair_chart(media_cumulative_line(df_media_prep), use_container_width=True)
+        st.altair_chart(media_cumulative_line(df_media_prep, date_range=date_range), use_container_width=True)
         st.write("You currently have", df_media_prep[df_media_prep["media_type"]=="posts"].shape[0], "pictures in your posts,", df_media_prep[df_media_prep["media_type"]=="archived_posts"].shape[0],"archived posts pictures,", df_media_prep[df_media_prep["media_type"]=="profile"].shape[0], "profile picture,", df_media_prep[df_media_prep["media_type"]=="stories"].shape[0], "stories and", df_media_prep[df_media_prep["media_type"]=="recently_deleted"].shape[0], "recently deleted pictures")
     with col2 :
         st.subheader("Media types distribution")
-        st.altair_chart(media_type_bar(df_media_prep), use_container_width=True)
+        st.altair_chart(media_type_bar(df_media_prep, date_range=date_range), use_container_width=True)
 
     st.subheader("Stories frequencies ")
     by_stories = st.radio("Grouped by :", ["years","months","weeks"], index=1, horizontal=True, key="stories_hist")
-    st.altair_chart(media_frequency_histogram(df_media_prep, by_stories), use_container_width=True)
+    st.altair_chart(media_frequency_histogram(df_media_prep, by_stories, date_range=date_range), use_container_width=True)
 
     st.subheader("Posts & Archived Posts frequencies ")
     by_posts = st.radio("Grouped by :", ["years","months","weeks"], index=1, horizontal=True, key="posts_hist")
-    st.altair_chart(media_frequency_histogram(df_media_prep, by_posts, media_type=["archived_posts", "posts"], color='blues'), use_container_width=True)
+    st.altair_chart(media_frequency_histogram(df_media_prep, by_posts, media_type=["archived_posts", "posts"], color='blues', date_range=date_range), use_container_width=True)
 
 # ------------gallery ---------------
     st.header("Gallery")
@@ -386,7 +397,7 @@ with activity_tab:
 
     st.subheader("Saved informations")
     by_saved = st.radio("Grouped by :", ["days","months","weeks"], index=1, horizontal=True, key="saved_hist")
-    st.altair_chart(saved_media_by_time(df_saved_collections, df_saved_posts, df_saved_music, by_saved))
+    st.altair_chart(saved_media_by_time(df_saved_collections, df_saved_posts, df_saved_music, by_saved, date_range=date_range))
     saved_c1, saved_c2, saved_c3 = st.columns(3)
     with saved_c1:
         st.write()
@@ -536,7 +547,7 @@ with security_tab:
         by = st.radio("Grouped by :", ["months","days","years"], horizontal=True, index=0)
 
         st.subheader("Login / Logout")
-        st.altair_chart(login_logout_hist(df_logs, by=by), use_container_width=True)
+        st.altair_chart(login_logout_hist(df_logs, by=by, date_range=date_range), use_container_width=True)
 
         st.subheader("Cookies Distribution")
         st.altair_chart(cookies_pie(df_logs), use_container_width=True)

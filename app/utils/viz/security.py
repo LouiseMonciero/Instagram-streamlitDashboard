@@ -4,6 +4,48 @@ import altair as alt
 
 # ---------- helpers ----------
 
+def filter_by_date_range(df: pd.DataFrame, date_column: str, date_range: tuple) -> pd.DataFrame:
+    """
+    Filter a dataframe by date range without modifying the original.
+    
+    Args:
+        df: DataFrame to filter
+        date_column: Name of the date column
+        date_range: Tuple of (start_date, end_date)
+    
+    Returns:
+        Filtered DataFrame copy
+    """
+    if not date_range or len(date_range) != 2:
+        return df
+    
+    df_filtered = df.copy()
+    
+    # Ensure the date column is datetime
+    if not pd.api.types.is_datetime64_any_dtype(df_filtered[date_column]):
+        df_filtered[date_column] = pd.to_datetime(df_filtered[date_column], errors='coerce')
+    
+    # Convert filter dates to datetime and handle timezone
+    start_date = pd.to_datetime(date_range[0])
+    end_date = pd.to_datetime(date_range[1])
+    
+    # If the column has timezone info, localize the filter dates to match
+    if df_filtered[date_column].dt.tz is not None:
+        # Get the timezone from the column
+        tz = df_filtered[date_column].dt.tz
+        # Localize start and end dates to the same timezone
+        if start_date.tz is None:
+            start_date = start_date.tz_localize('UTC').tz_convert(tz)
+        else:
+            start_date = start_date.tz_convert(tz)
+            
+        if end_date.tz is None:
+            end_date = end_date.tz_localize('UTC').tz_convert(tz)
+        else:
+            end_date = end_date.tz_convert(tz)
+    
+    return df_filtered[(df_filtered[date_column] >= start_date) & (df_filtered[date_column] <= end_date)]
+
 def _auto_to_datetime(ts_series: pd.Series) -> pd.Series:
     """Convertit epoch en datetime Europe/Paris. Auto-détection s (<=1e11) vs ms (>1e11)."""
     ts = pd.to_numeric(ts_series, errors="coerce")
@@ -72,12 +114,17 @@ def _group_counts(df: pd.DataFrame, by: str):
 
 # ---------- security charts ----------
 
-def login_logout_hist(df: pd.DataFrame, by: str = "months") -> alt.Chart:
+def login_logout_hist(df: pd.DataFrame, by: str = "months", date_range: tuple = None) -> alt.Chart:
     """
     Histogramme logins (vert) / logouts (rouge, valeurs négatives) sur le même graphe.
     by ∈ {"months","days","years"}.
     """
     dfp = _preprocess(df)
+    
+    # Apply date filter if provided
+    if date_range:
+        dfp = filter_by_date_range(dfp, 'ts', date_range)
+    
     grp, key, order = _group_counts(dfp, by)
 
     color_scale = alt.Scale(domain=["login","logout"], range=["#22c55e","#ef4444"])

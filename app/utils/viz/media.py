@@ -2,9 +2,53 @@ import numpy as np
 import pandas as pd
 import altair as alt
 
+# ---------- helpers ----------
+
+def filter_by_date_range(df: pd.DataFrame, date_column: str, date_range: tuple) -> pd.DataFrame:
+    """
+    Filter a dataframe by date range without modifying the original.
+    
+    Args:
+        df: DataFrame to filter
+        date_column: Name of the date column
+        date_range: Tuple of (start_date, end_date)
+    
+    Returns:
+        Filtered DataFrame copy
+    """
+    if not date_range or len(date_range) != 2:
+        return df
+    
+    df_filtered = df.copy()
+    
+    # Ensure the date column is datetime
+    if not pd.api.types.is_datetime64_any_dtype(df_filtered[date_column]):
+        df_filtered[date_column] = pd.to_datetime(df_filtered[date_column], errors='coerce')
+    
+    # Convert filter dates to datetime and handle timezone
+    start_date = pd.to_datetime(date_range[0])
+    end_date = pd.to_datetime(date_range[1])
+    
+    # If the column has timezone info, localize the filter dates to match
+    if df_filtered[date_column].dt.tz is not None:
+        # Get the timezone from the column
+        tz = df_filtered[date_column].dt.tz
+        # Localize start and end dates to the same timezone
+        if start_date.tz is None:
+            start_date = start_date.tz_localize('UTC').tz_convert(tz)
+        else:
+            start_date = start_date.tz_convert(tz)
+            
+        if end_date.tz is None:
+            end_date = end_date.tz_localize('UTC').tz_convert(tz)
+        else:
+            end_date = end_date.tz_convert(tz)
+    
+    return df_filtered[(df_filtered[date_column] >= start_date) & (df_filtered[date_column] <= end_date)]
+
 # ---------- media -----------
 
-def media_cumulative_line(df: pd.DataFrame) -> alt.Chart:
+def media_cumulative_line(df: pd.DataFrame, date_range: tuple = None) -> alt.Chart:
     """
     Line chart showing cumulative count of posts (or archived_posts) and stories over time.
     """
@@ -16,6 +60,10 @@ def media_cumulative_line(df: pd.DataFrame) -> alt.Chart:
 
     media["timestamp"] = media["timestamp"].astype(str)
     media["date"] = pd.to_datetime(media["timestamp"].str[:6], format="%Y%m", errors="coerce")
+    
+    # Apply date filter if provided
+    if date_range:
+        media = filter_by_date_range(media, 'date', date_range)
 
     # Aggregate counts
     media["count"] = 1
@@ -50,7 +98,7 @@ def media_cumulative_line(df: pd.DataFrame) -> alt.Chart:
     )
     return chart
 
-def media_frequency_histogram(df: pd.DataFrame, by: str = "months", media_type=["stories"], color="oranges") -> alt.Chart:
+def media_frequency_histogram(df: pd.DataFrame, by: str = "months", media_type=["stories"], color="oranges", date_range: tuple = None) -> alt.Chart:
     """
     Histogram of posts/stories frequency grouped by year, month, or week.
     The DataFrame must have a 'timestamp' column formatted as YYYYMM or YYYYMMDD.
@@ -64,6 +112,10 @@ def media_frequency_histogram(df: pd.DataFrame, by: str = "months", media_type=[
     # Parse timestamp safely
     selected_medias["timestamp"] = selected_medias["timestamp"].astype(str)
     selected_medias["date"] = pd.to_datetime(selected_medias["timestamp"].str[:6], format="%Y%m", errors="coerce")
+    
+    # Apply date filter if provided
+    if date_range:
+        selected_medias = filter_by_date_range(selected_medias, 'date', date_range)
 
     # Choose grouping level
     if by == "years":
@@ -94,9 +146,20 @@ def media_frequency_histogram(df: pd.DataFrame, by: str = "months", media_type=[
     )
     return chart
 
-def media_type_bar(df: pd.DataFrame) -> alt.Chart:
+def media_type_bar(df: pd.DataFrame, date_range: tuple = None) -> alt.Chart:
+    # Make a copy to avoid modifying original
+    df_filtered = df.copy()
+    
+    # Apply date filter if provided and if there's a date column
+    # Note: media_type_bar typically works on the full dataset
+    # but we can filter by timestamp if needed
+    if date_range and 'timestamp' in df_filtered.columns:
+        df_filtered["timestamp_str"] = df_filtered["timestamp"].astype(str)
+        df_filtered["date"] = pd.to_datetime(df_filtered["timestamp_str"].str[:6], format="%Y%m", errors="coerce")
+        df_filtered = filter_by_date_range(df_filtered, 'date', date_range)
+    
     agg = (
-        df.groupby("media_type", as_index=False)
+        df_filtered.groupby("media_type", as_index=False)
           .size()
           .rename(columns={"size": "count"})
           .sort_values("count", ascending=False)

@@ -23,11 +23,29 @@ def filter_by_date_range(df: pd.DataFrame, date_column: str, date_range: tuple) 
         return df
     
     df_filtered = df.copy()
-    start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
     
     # Ensure the date column is datetime
     if not pd.api.types.is_datetime64_any_dtype(df_filtered[date_column]):
         df_filtered[date_column] = pd.to_datetime(df_filtered[date_column], errors='coerce')
+    
+    # Convert filter dates to datetime and handle timezone
+    start_date = pd.to_datetime(date_range[0])
+    end_date = pd.to_datetime(date_range[1])
+    
+    # If the column has timezone info, localize the filter dates to match
+    if df_filtered[date_column].dt.tz is not None:
+        # Get the timezone from the column
+        tz = df_filtered[date_column].dt.tz
+        # Localize start and end dates to the same timezone
+        if start_date.tz is None:
+            start_date = start_date.tz_localize('UTC').tz_convert(tz)
+        else:
+            start_date = start_date.tz_convert(tz)
+            
+        if end_date.tz is None:
+            end_date = end_date.tz_localize('UTC').tz_convert(tz)
+        else:
+            end_date = end_date.tz_convert(tz)
     
     return df_filtered[(df_filtered[date_column] >= start_date) & (df_filtered[date_column] <= end_date)]
 
@@ -558,7 +576,7 @@ def scroll_hist(df_time_spent_on_ig_prep: pd.DataFrame, color: str = "blues", da
     return chart
 
 
-def saved_media_by_time(saved_collections: pd.DataFrame, saved_posts: pd.DataFrame, saved_music: pd.DataFrame, by_saved: str) -> alt.Chart:
+def saved_media_by_time(saved_collections: pd.DataFrame, saved_posts: pd.DataFrame, saved_music: pd.DataFrame, by_saved: str, date_range: tuple = None) -> alt.Chart:
     """Show saved media activity across all types grouped by time period"""
     time_data = []
     
@@ -567,6 +585,10 @@ def saved_media_by_time(saved_collections: pd.DataFrame, saved_posts: pd.DataFra
         collections = saved_collections[saved_collections['title'].isna()].copy()
         collections['added_time'] = pd.to_datetime(collections['added_time'])
         collections = collections.dropna(subset=['added_time'])
+        
+        # Apply date filter if provided
+        if date_range:
+            collections = filter_by_date_range(collections, 'added_time', date_range)
         
         if by_saved == "years":
             collections['period'] = collections['added_time'].dt.year.astype(str)
@@ -590,6 +612,10 @@ def saved_media_by_time(saved_collections: pd.DataFrame, saved_posts: pd.DataFra
         posts = saved_posts.copy()
         posts['timestamp'] = pd.to_datetime(posts['timestamp'], unit='s')
         
+        # Apply date filter if provided
+        if date_range:
+            posts = filter_by_date_range(posts, 'timestamp', date_range)
+
         if by_saved == "years":
             posts['period'] = posts['timestamp'].dt.year.astype(str)
         elif by_saved == "months":
@@ -617,6 +643,10 @@ def saved_media_by_time(saved_collections: pd.DataFrame, saved_posts: pd.DataFra
         if timestamp_col:
             music['timestamp'] = pd.to_datetime(music[timestamp_col], unit='s')
             music = music.dropna(subset=['timestamp'])
+            
+            # Apply date filter if provided
+            if date_range:
+                music = filter_by_date_range(music, 'timestamp', date_range)
             
             if by_saved == "years":
                 music['period'] = music['timestamp'].dt.year.astype(str)

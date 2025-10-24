@@ -3,6 +3,50 @@ import altair as alt
 import matplotlib.pyplot as plt
 from matplotlib_venn import venn2, venn3
 
+# ---------- helpers ----------
+
+def filter_by_date_range(df: pd.DataFrame, date_column: str, date_range: tuple) -> pd.DataFrame:
+    """
+    Filter a dataframe by date range without modifying the original.
+    
+    Args:
+        df: DataFrame to filter
+        date_column: Name of the date column
+        date_range: Tuple of (start_date, end_date)
+    
+    Returns:
+        Filtered DataFrame copy
+    """
+    if not date_range or len(date_range) != 2:
+        return df
+    
+    df_filtered = df.copy()
+    
+    # Ensure the date column is datetime
+    if not pd.api.types.is_datetime64_any_dtype(df_filtered[date_column]):
+        df_filtered[date_column] = pd.to_datetime(df_filtered[date_column], errors='coerce')
+    
+    # Convert filter dates to datetime and handle timezone
+    start_date = pd.to_datetime(date_range[0])
+    end_date = pd.to_datetime(date_range[1])
+    
+    # If the column has timezone info, localize the filter dates to match
+    if df_filtered[date_column].dt.tz is not None:
+        # Get the timezone from the column
+        tz = df_filtered[date_column].dt.tz
+        # Localize start and end dates to the same timezone
+        if start_date.tz is None:
+            start_date = start_date.tz_localize('UTC').tz_convert(tz)
+        else:
+            start_date = start_date.tz_convert(tz)
+            
+        if end_date.tz is None:
+            end_date = end_date.tz_localize('UTC').tz_convert(tz)
+        else:
+            end_date = end_date.tz_convert(tz)
+    
+    return df_filtered[(df_filtered[date_column] >= start_date) & (df_filtered[date_column] <= end_date)]
+
 # ---------- follows ---------
 def plot_venn(sets_by_type: dict, selected_types=None):
     """Venn if 2-3 groups (matplotlib-venn)"""
@@ -65,6 +109,7 @@ def plot_follow_time_series_altair(
     timeseries: pd.DataFrame,
     cumulative: bool = True,
     title: str = "Followers / Followings over time",
+    date_range: tuple = None,
 ):
     """
     Interactive Altair line chart showing the evolution of followers / followings.
@@ -74,12 +119,16 @@ def plot_follow_time_series_altair(
     if timeseries.empty:
         return None
 
-    y_col = "cum_count" if cumulative else "new_count"
-    y_label = "Cumulative count" if cumulative else "New per day"
-
     # ensure correct types
     timeseries = timeseries.copy()
     timeseries["date"] = pd.to_datetime(timeseries["date"])
+    
+    # Apply date filter if provided
+    if date_range:
+        timeseries = filter_by_date_range(timeseries, 'date', date_range)
+
+    y_col = "cum_count" if cumulative else "new_count"
+    y_label = "Cumulative count" if cumulative else "New per day"
 
     chart = (
         alt.Chart(timeseries)
