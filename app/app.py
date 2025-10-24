@@ -1,18 +1,17 @@
 import streamlit as st
 from math import ceil
 from utils.io import load_data, DATA_PATH
-from utils.prep import preprocess_data, date_str
+from utils.prep import preprocess_data, date_str, count_user_messages
 # Import lazy - w2v_model ne chargera gensim que lors de l'appel à generate_clusters
 from utils.w2v_model import generate_clusters
 from utils.data_enrichement import enrich_companies
-from utils.viz.activities import total_activities_over_time, plot_duo_participation, group_vs_duo_conv_pie, plot_duo_reel_vs_nonreel, request_corr0, scroll_hist, saved_media_by_time
+from utils.viz.activities import total_activities_over_time, plot_duo_participation, group_vs_duo_conv_pie, plot_duo_reel_vs_nonreel, request_corr0, scroll_hist, saved_media_by_time, website_bar
 from utils.viz.media import media_cumulative_line, media_type_bar, media_frequency_histogram
 from utils.viz.ads import ads_bar, ads_countries_map, ads_enriched_missing_values, ads_inception_year
 from utils.viz.preferences import clusters_podium, clusters_grid
 from utils.viz.security import login_logout_hist, cookies_pie, password_activity_bar
 from utils.viz.connections import upset, plot_venn, plot_follow_time_series_altair, follows_pie
 from utils.viz.personal_info import devices_over_times
-from utils.viz.link_history import website_bar
 
 st.set_page_config(page_title="Data Storytelling Dashboard", layout="wide")
 @st.cache_data(show_spinner=False)
@@ -37,8 +36,9 @@ with st.spinner("Preprocessing your data...", show_time=True):
     df_locations_of_interest_prep = preprocess_data(df_locations_of_interest=df_locations_of_interest)
     df_last_known_location = preprocess_data(df_last_known_location=df_last_known_location)
     df_devices_prep = preprocess_data(df_devices=df_devices)
+    messages_sent, messages_received = count_user_messages(df_all_conversations)
 
-home, connections_tab, media_tab, preferences_tab, activity_tab, link_history_tab, ads_tab, personal_info_tab, security_tab = st.tabs(["Welcome !", "Connections", "Media", "Preferences","Your activity", "Link History", 'Ads Info', "Personnal Information", "Security Insights"])
+home, connections_tab, media_tab, preferences_tab, activity_tab, ads_tab, personal_info_tab, security_tab = st.tabs(["Welcome !", "Connections", "Media", "Preferences","Your activity", 'Ads Info', "Personnal Information", "Security Insights"])
 
 
 with st.sidebar:
@@ -249,8 +249,8 @@ with activity_tab:
     c4.metric("Likes on comment", f"{len(df_liked_comments)}")
 
     c21, c22, c23, c24 = st.columns(4)
-    c21.metric("Messages sent", f"IDK")
-    c22.metric("Messages received", f"IDK")
+    c21.metric("Messages sent", f"{messages_sent}")
+    c22.metric("Messages received", f"{messages_received}"),
     c23.metric("Comments", f"{len(df_all_comments)}")
     c24.metric("Times you downloaded your datas", f"{len(df_your_information_download_requests)}")
 
@@ -314,6 +314,9 @@ with activity_tab:
     with saved_c3:
         st.write()
 
+    st.subheader("Link history")
+    st.altair_chart(website_bar(df_link_history))
+
 with preferences_tab:
     st.header("Your recommended topics")
     with st.expander("Show raw datas"):
@@ -342,14 +345,6 @@ with preferences_tab:
             st.write(st.session_state['clusters_compositions'])
         st.altair_chart(clusters_podium(st.session_state['cluster_datas'], clusters_compositions))
         st.altair_chart(clusters_grid(st.session_state['cluster_datas'], clusters_compositions))
-
-with link_history_tab:
-    st.header("Link history")
-    with st.expander("Show raw datas"):
-        st.write("Follows")
-        st.write(df_follows)
-
-    st.altair_chart(website_bar(df_link_history))
 
 with ads_tab:
     st.header("Ads information")
@@ -393,6 +388,7 @@ with ads_tab:
             st.write(advertisers_enriched)
         st.altair_chart(ads_enriched_missing_values(advertisers_enriched))
         st.altair_chart(ads_countries_map(advertisers_enriched))
+        st.write("**Creation of each advertisers**")
         st.altair_chart(ads_inception_year(advertisers_enriched, signup_details['Time']))
 
 with personal_info_tab:

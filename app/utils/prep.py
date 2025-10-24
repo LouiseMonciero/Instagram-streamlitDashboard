@@ -244,3 +244,50 @@ def preprocess_data( df_contacts=None, df_media=None, df_follows=None, df_device
         pass
     return
 
+def count_user_messages(df_all_conversations: pd.DataFrame) -> tuple:
+    """
+    Identifie l'utilisateur propriétaire et compte les messages envoyés et reçus.
+    Retourne: (nom_utilisateur, messages_envoyés, messages_reçus)
+    """
+    if df_all_conversations.empty:
+        return 0, 0
+    
+    def find_main_user(df_all_conversations: pd.DataFrame) -> str:
+        candidate_users = {}
+
+        for _, row in df_all_conversations.iterrows():
+            participants = row.get("participants")
+            if not isinstance(participants, list) or len(participants) != 2:
+                continue
+
+            for user in participants:
+                candidate_users[user] = candidate_users.get(user, 0) + 1
+
+        if not candidate_users:
+            return "Unknown User"
+
+        # L'utilisateur principal est celui qui apparaît le plus souvent
+        main_user = max(candidate_users, key=candidate_users.get)
+        return main_user
+    
+    main_user = find_main_user(df_all_conversations)
+    # Compter les messages envoyés et reçus
+    messages_envoyes = 0
+    messages_recus = 0
+    
+    for _, row in df_all_conversations.iterrows():
+        participation = row['participants_participation']
+        
+        if not participation:
+            continue
+            
+        # Messages envoyés par l'utilisateur principal
+        if main_user in participation:
+            messages_envoyes += participation[main_user]
+        
+        # Messages reçus (tous les messages des autres participants)
+        for user, count in participation.items():
+            if user != main_user:
+                messages_recus += count
+    
+    return messages_envoyes, messages_recus
