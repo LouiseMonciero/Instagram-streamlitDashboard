@@ -342,7 +342,248 @@ def load_data():
     other_categories_used_to_reach_you = [item["value"] for item in data["label_values"][0]["vec"]]
 
 
-    return (df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs, df_all_ads, substriction_status, information_youve_submitted_to_advertisers, advertisers_using_your_activity_or_information, other_categories_used_to_reach_you, advertisers_enriched)
+    # --------- your activity ----------------
+    reel_comments = pd.json_normalize(
+        data=json.load(open(
+            DATA_PATH+'/your_instagram_activity/comments/reels_comments.json'
+        ))['comments_reels_comments'],
+        sep='.'
+    )[[
+        'string_map_data.Comment.value',
+        'string_map_data.Media Owner.value',
+        'string_map_data.Time.timestamp'
+    ]]
+    reel_comments.columns = ['comment', 'media_owner', 'timestamp']
+    reel_comments['comments_type'] = 'reel'
+
+    post_comments = pd.json_normalize(
+        data=json.load(open(
+            DATA_PATH+'/your_instagram_activity/comments/post_comments_1.json'
+        )),
+        sep='.'
+    )[[
+        'string_map_data.Comment.value',
+        'string_map_data.Media Owner.value',
+        'string_map_data.Time.timestamp'
+    ]]
+    post_comments.columns = ['comment', 'media_owner', 'timestamp']
+    
+    post_comments['comments_type'] = 'post'
+
+    df_all_comments = pd.concat(
+        [
+            reel_comments,
+            post_comments
+        ],
+        ignore_index=True
+    )
+
+    df_all_comments['date'] = (
+        pd.to_datetime(df_all_comments['timestamp'], unit='s', utc=True)
+        .dt.tz_convert('Europe/Paris')
+    )
+
+    df_liked_comments = pd.json_normalize(
+        data=json.load(open(
+            DATA_PATH+'/your_instagram_activity/likes/liked_comments.json'
+        ))['likes_comment_likes'],
+        sep='.',
+        record_path='string_list_data',
+        meta='title'
+    )
+    df_liked_comments.drop(['value'], axis=1, inplace=True)
+    df_liked_comments.columns = ['href', 'timestamp', 'comment_owner']
+    
+    df_liked_posts = pd.json_normalize(
+        data=json.load(open(
+            DATA_PATH+'/your_instagram_activity/likes/liked_posts.json'
+        ))['likes_media_likes'],
+        sep='.',
+        record_path='string_list_data',
+        meta='title'
+    )
+    df_liked_posts.drop(['value'], axis=1, inplace=True)
+    df_liked_posts.columns = ['href', 'timestamp', 'media_owner']
+
+    messages_folders = glob.glob(DATA_PATH+'/your_instagram_activity/messages/inbox/*', recursive=True)
+    conversation_inbox_df = pd.DataFrame(columns=['conv_name','participants', 'count_total_interaction', 'count_total_link_shared','count_total_reel_sent','participants_participation','timestamps'])
+
+    def count_total(participants, messages):
+        count_participants = { x:0 for x in participants}
+        count_has_linked = 0
+        count_has_reel_linked = 0
+        all_timestamp = []
+        for message in messages:
+            link = None
+            share = message.get("share")
+            if isinstance(share, dict):
+                link = share.get("link")
+
+            if link:
+                sender = message.get("sender_name")
+                if sender in count_participants:
+                    count_participants[sender] += 1
+                else:
+                    count_participants.setdefault(sender, 0)
+                    count_participants[sender] += 1
+                count_has_linked+=1
+                if re.search( '^https://www.instagram.com/reel/*', message['share']['link']):
+                    count_has_reel_linked+=1
+            all_timestamp.append(message['timestamp_ms'])
+        return count_participants, count_has_linked, count_has_reel_linked, all_timestamp
+
+    for conv_path in messages_folders:
+        data=json.load(open(
+            conv_path+'/message_1.json'
+        ))
+        count_participants, count_has_linked, count_has_reel_linked, all_timestamp = count_total([x["name"] for x in data['participants']], data['messages'])
+
+        new_row = {
+            'conv_name':'',
+            'participants':[x["name"] for x in data['participants']],
+            'count_total_interaction': len(data['messages']),
+            'count_total_link_shared': count_has_linked,
+            'count_total_reel_sent': count_has_reel_linked,
+            'participants_participation': count_participants,
+            'timestamps': all_timestamp,
+        }
+        conversation_inbox_df.loc[len(conversation_inbox_df)] = new_row
+
+    conversation_inbox_df['message_type'] = 'message_inbox'
+   
+    messages_folders = glob.glob(DATA_PATH+'/your_instagram_activity/messages/message_requests/*', recursive=True)
+    conversation_request_df = pd.DataFrame(columns=['conv_name','participants', 'count_total_interaction', 'count_total_link_shared','count_total_reel_sent','participants_participation','timestamps'])
+
+    for conv_path in messages_folders:
+        data=json.load(open(
+            conv_path+'/message_1.json'
+        ))
+        count_participants, count_has_linked, count_has_reel_linked, all_timestamp = count_total([x["name"] for x in data['participants']], data['messages'])
+
+        new_row = {
+            'conv_name':'',
+            'participants':[x["name"] for x in data['participants']],
+            'count_total_interaction': len(data['messages']),
+            'count_total_link_shared': count_has_linked,
+            'count_total_reel_sent': count_has_reel_linked,
+            'participants_participation': count_participants,
+            'timestamps': all_timestamp,
+        }
+        
+        conversation_request_df.loc[len(conversation_request_df)] = new_row
+
+    conversation_request_df['message_type'] = 'message_requests'
+
+    df_all_conversations = pd.concat([
+        conversation_request_df,
+        conversation_inbox_df
+    ])
+
+    data = json.load(open(DATA_PATH+'/your_instagram_activity/other_activity/time_spent_on_instagram.json'))
+
+    rows = []
+    for session in data:
+        session_ts = session.get("timestamp")
+
+        update_time = None
+        intervals = []
+        for item in session.get("label_values", []):
+            if item.get("label") == "Update time":
+                update_time = item.get("timestamp_value")
+            elif item.get("label") == "Intervals":
+                intervals = item.get("vec", [])
+
+        for interval in intervals:
+            d = interval.get("dict", [])
+            start = end = None
+            for kv in d:
+                if kv.get("label") == "Start time":
+                    start = kv.get("timestamp_value")
+                elif kv.get("label") == "End time":
+                    end = kv.get("timestamp_value")
+            if start is not None and end is not None:
+                rows.append({
+                    "session_timestamp": session_ts,
+                    "update_time": update_time,
+                    "start_time": start,
+                    "end_time": end
+                })
+    df_time_spent_on_ig = pd.DataFrame(rows)
+    for col in ["session_timestamp", "update_time", "start_time", "end_time"]:
+        df_time_spent_on_ig[col] = pd.to_datetime(df_time_spent_on_ig[col], unit="s", utc=True)
+    df_time_spent_on_ig["duration_sec"] = (df_time_spent_on_ig["end_time"] - df_time_spent_on_ig["start_time"]).dt.total_seconds()
+
+    data=json.load(open(
+        DATA_PATH+'/your_instagram_activity/other_activity/your_information_download_requests.json'
+    ))
+    df_your_information_download_requests = {'download_count':len(data), 'timestamps':[x['timestamp'] for x in data]}
+
+    data = json.load(open(
+        DATA_PATH+'/your_instagram_activity/saved/saved_collections.json'
+    ))['saved_saved_collections']
+
+    def pick(ts_dict):
+        return (ts_dict or {}).get("timestamp")
+
+    def extract(row):
+        smd = row.get("string_map_data", {}) or {}
+        name = smd.get("Name", {}) or {}
+        return {
+            "title": row.get("title"),
+            "value": name.get("value"),
+            "href": name.get("href"),
+            "creation_time": pick(smd.get("Creation Time")),
+            "update_time": pick(smd.get("Update Time")),
+            "added_time": pick(smd.get("Added Time")),
+        }
+
+    df_saved_collections = pd.DataFrame([extract(r) for r in data])
+    for c in ["creation_time", "update_time", "added_time"]:
+        df_saved_collections[c] = pd.to_datetime(df_saved_collections[c], unit="s", utc=True, errors="coerce")
+
+    df_saved_collections["saved_type"] = "saved_collections"
+
+    df_saved_locations = pd.json_normalize(
+        data=json.load(open(
+            DATA_PATH+'/your_instagram_activity/saved/saved_locations.json'
+        ))['saved_saved_locations'][0]['string_map_data'],
+        sep='.',
+    )
+    df_saved_locations.drop(['Name.href','Name.timestamp','Saved At.href','Saved At.value','Latitude.timestamp','Latitude.href','Longitude.href','Longitude.timestamp'], axis=1, inplace=True)
+    df_saved_locations.columns = ['value', 'timestamp', 'lat','lon']
+    df_saved_locations['saved_type'] = 'saved_locations'
+
+    df_saved_posts = pd.json_normalize(
+        data=json.load(open(
+            DATA_PATH+'/your_instagram_activity/saved/saved_posts.json'
+        ))['saved_saved_media'],
+        sep='.',
+        meta='title'
+    )
+    df_saved_posts.columns = ['media_owner', 'href', 'timestamp']
+    df_saved_posts['saved_type'] = 'saved_posts'
+
+    df_saved_music = pd.json_normalize(
+        data=json.load(open(
+            DATA_PATH+'/your_instagram_activity/saved/saved_music.json'
+        ))['saved_saved_music'],
+        sep='.',
+    )
+
+    df_story_likes = pd.json_normalize(
+        data=json.load(open(
+            DATA_PATH+'/your_instagram_activity/story_interactions/story_likes.json'
+        ))['story_activities_story_likes'],
+        sep='.',
+        meta='title',
+        record_path='string_list_data'
+    )
+
+    return (df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs, df_all_ads, substriction_status, information_youve_submitted_to_advertisers, advertisers_using_your_activity_or_information, other_categories_used_to_reach_you, advertisers_enriched,
+            df_all_comments, df_liked_comments, df_liked_posts, df_all_conversations,
+            df_time_spent_on_ig, df_your_information_download_requests, 
+            df_saved_collections, df_saved_locations, df_saved_posts, df_saved_music,
+            df_story_likes )
 
 def fetch_and_cache():
     return

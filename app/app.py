@@ -1,33 +1,52 @@
 import streamlit as st
 from math import ceil
-from utils.io import load_data, pwd, DATA_PATH, HEADERS
-from utils.viz import login_logout_hist, cookies_pie, website_bar, password_activity_bar, upset, plot_venn, plot_follow_time_series_altair, follows_pie, media_cumulative_line, media_type_bar, media_frequency_histogram, clusters_podium, clusters_grid, plot_locations_map, devices_over_times, ads_bar, ads_countries_map, ads_enriched_missing_values, ads_inception_year
+from utils.io import load_data, DATA_PATH
 from utils.prep import preprocess_data, date_str
 # Import lazy - w2v_model ne chargera gensim que lors de l'appel à generate_clusters
 from utils.w2v_model import generate_clusters
 from utils.data_enrichement import enrich_companies
-
+from utils.viz.activities import total_activities_over_time, plot_duo_participation, group_vs_duo_conv_pie, plot_duo_reel_vs_nonreel, request_corr0, scroll_hist, saved_media_by_time
+from utils.viz.media import media_cumulative_line, media_type_bar, media_frequency_histogram
+from utils.viz.ads import ads_bar, ads_countries_map, ads_enriched_missing_values, ads_inception_year
+from utils.viz.preferences import clusters_podium, clusters_grid
+from utils.viz.security import login_logout_hist, cookies_pie, password_activity_bar
+from utils.viz.connections import upset, plot_venn, plot_follow_time_series_altair, follows_pie
+from utils.viz.personal_info import devices_over_times
+from utils.viz.link_history import website_bar
 
 st.set_page_config(page_title="Data Storytelling Dashboard", layout="wide")
 @st.cache_data(show_spinner=False)
 
 def get_data():
-    #tables = make_tables(df_raw)
     return load_data()
-#st.image('assets/logo-instagram-black-bg.webp', width=80)
-#st.logo('assets/277-removebg-preview.png')
 
 st.title("Personal Instagram Dashboard !")
-st.caption("Source: <dataset title> — <portal> — <license>")
-tab1, connections_tab, media_tab, preferences_tab, activity_tab, link_history_tab, ads_tab, personal_info_tab, security_tab = st.tabs(["Welcome !", "Connections", "Media", "Preferences","Your activity", "Link History", 'Ads Info', "Personnal Information", "Security Insights"])
 
-st.write('here is the path',pwd())
+with st.spinner("Loading your data...", show_time=True):
+    (df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs, df_all_ads, substriction_status, information_youve_submitted_to_advertisers, advertisers_using_your_activity_or_information, other_categories_used_to_reach_you, advertisers_enriched,
+            df_all_comments, df_liked_comments, df_liked_posts, df_all_conversations,
+            df_time_spent_on_ig, df_your_information_download_requests, 
+            df_saved_collections, df_saved_locations, df_saved_posts, df_saved_music,
+            df_story_likes) = get_data()
+
+with st.spinner("Preprocessing your data...", show_time=True):
+    clean_follows = preprocess_data(df_follows=df_follows)
+    clean_contacts = preprocess_data(df_contacts=df_contacts)
+    df_media_prep = preprocess_data(df_media=df_media)
+    df_link_history_prep = preprocess_data(df_link_history=df_link_history)
+    df_locations_of_interest_prep = preprocess_data(df_locations_of_interest=df_locations_of_interest)
+    df_last_known_location = preprocess_data(df_last_known_location=df_last_known_location)
+    df_devices_prep = preprocess_data(df_devices=df_devices)
+
+home, connections_tab, media_tab, preferences_tab, activity_tab, link_history_tab, ads_tab, personal_info_tab, security_tab = st.tabs(["Welcome !", "Connections", "Media", "Preferences","Your activity", "Link History", 'Ads Info', "Personnal Information", "Security Insights"])
+
 
 with st.sidebar:
     st.header("Filters")
     date_range = st.date_input("Date range", [])
 
-df_contacts, df_media, df_follows, df_devices, df_camera_info, df_locations_of_interest, possible_emails, profile_based_in, df_link_history, recommended_topics, signup_details, password_change_activity, df_last_known_location, df_logs, df_all_ads, substriction_status, information_youve_submitted_to_advertisers, advertisers_using_your_activity_or_information, other_categories_used_to_reach_you, advertisers_enriched = get_data()
+with home :
+    st.write("IDK what to put here....")
 
 with connections_tab:
     st.header("Connections")
@@ -36,9 +55,6 @@ with connections_tab:
         st.write(df_follows)
         st.write("Contacts")
         st.write(df_contacts)
-    
-    clean_follows = preprocess_data(df_follows=df_follows)
-    clean_contacts = preprocess_data(df_contacts=df_contacts)
     
     col1, col2 = st.columns([1,1], gap="large")
 
@@ -76,8 +92,8 @@ with connections_tab:
         )
     with col2:
         st.subheader("Followers / Followings accross time")
-        mode = st.radio("Mode", ["Cumulatif", "Journalier"], horizontal=True)
-        cum = (mode == "Cumulatif")
+        mode = st.radio("Mode", ["Cumulative", "Dayly"], horizontal=True)
+        cum = (mode == "Cumulative")
         #fig2 = plot_follow_time_series(clean["timeseries"], cumulative=cum,
                                     #title="Cumul des ajouts" if cum else "Ajouts quotidiens")
         chart2 = plot_follow_time_series_altair(clean_follows["timeseries"], cumulative=cum)
@@ -108,7 +124,6 @@ with connections_tab:
         st.altair_chart(follows_pie(df_follows))
 
 with media_tab:
-    df_media_prep = preprocess_data(df_media=df_media)
     st.header("Media Dashboard")
     with st.expander("Show raw data"):
         st.write("Media")
@@ -201,10 +216,104 @@ with media_tab:
 with activity_tab:
     st.header("Your activity")
     with st.expander("Show raw datas"):
-        st.subheader("All ads information")
-        st.info("This dataFrame was made up of 5 different files (videos_watched.json, suggested_profiles_viewed.json, posts_viewed.json, ads_clicked.json and ads_viewed.json). To normalized the data, the 'username' column of the profile original suggested_profiles_viewed datFrame and the 'title' column of the ads_clicked dataFrame were renamed to 'author'.")
-        st.write(df_all_ads)
+        st.subheader("All comments")
+        st.write(df_all_comments)
+        st.subheader("Liked comments")
+        st.write(df_liked_comments)
+        st.subheader("Liked posts")
+        st.write(df_liked_posts)
+        st.subheader("Your conversations data")
+        st.write(df_all_conversations)
+        st.subheader("Time spent on instagram")
+        st.write(df_time_spent_on_ig)
+        st.subheader("Your downloaded information")
+        st.write(df_your_information_download_requests)
+        st.subheader("Saved collections")
+        st.write(df_saved_collections)
+        st.subheader("Saved locations")
+        st.write(df_saved_locations)
+        st.subheader("Saved posts")
+        st.write(df_saved_posts)
+        st.subheader("Saved music")
+        st.write(df_saved_music)
+        st.subheader("Story liked")
+        st.write(df_story_likes)
+    with st.expander("Show preprocessed datas"):
+        st.write("It empty here .... ") # encode differently pleeeeeease !!!
     
+    st.subheader("Overview")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Hours spent on instgram", f"{df_time_spent_on_ig['duration_sec'].sum() / 60:.2f} hours")
+    c2.metric("Likes", f"{len(df_liked_posts)}")
+    c3.metric("Stories liked", f"{len(df_story_likes)}")
+    c4.metric("Likes on comment", f"{len(df_liked_comments)}")
+
+    c21, c22, c23, c24 = st.columns(4)
+    c21.metric("Messages sent", f"IDK")
+    c22.metric("Messages received", f"IDK")
+    c23.metric("Comments", f"{len(df_all_comments)}")
+    c24.metric("Times you downloaded your datas", f"{len(df_your_information_download_requests)}")
+
+    st.subheader("Your activities over time")
+    st.subheader("Activities across time")
+    mode = st.radio("Mode", ["Cumulative", "Monthly"], horizontal=True)
+    cum = (mode == "Cumulative")
+    monthly = (mode == "Monthly")
+
+    chart = total_activities_over_time(
+        df_all_comments,
+        df_liked_comments,
+        df_liked_posts,
+        df_story_likes,
+        df_saved_posts,
+        df_all_conversations,
+        cumulative=cum,
+        monthly=True,
+        title="Activities over time",
+        use_log_y=True
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+    st.subheader("Messages & conversations")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("Participations of your conversations")
+        top_n_participation = st.slider("Top N conversations", 1, 30, 10, key="participations_slider")
+        st.altair_chart(plot_duo_participation(df_all_conversations, top_n_participation))
+
+        st.write("Group vs duo's conversations")
+        st.altair_chart(group_vs_duo_conv_pie(df_all_conversations))
+
+    with col2:
+        st.write("'Reel based' conversations")
+        top_n_reel = st.slider("Top N conversations", 1, 30, 10, key="reel_slider")
+        st.altair_chart(plot_duo_reel_vs_nonreel(df_all_conversations, top_n_reel))
+    
+    st.subheader("Dm requests")
+    col21, col22 = st.columns(2)
+    with col21:
+        fig0 = request_corr0(df_all_conversations)
+        st.pyplot(fig0, use_container_width=True)
+    with col22:
+        st.info("On instagram, the requests sent in dms are often scam or sexual content.\n" \
+        "See how the number of participant and the total messages sent can be correlated to the type of messages you received.")
+    
+
+    st.subheader("Time spent on instagram")
+    #st.altair_chart(scroll_hist(df_time_spent_on_ig))
+
+    st.subheader("Saved informations")
+    by_saved = st.radio("Grouped by :", ["years","months","weeks"], index=1, horizontal=True, key="saved_hist")
+    st.altair_chart(saved_media_by_time(df_saved_collections, df_saved_posts, df_saved_music, by_saved))
+    saved_c1, saved_c2, saved_c3 = st.columns(3)
+    with saved_c1:
+        st.write()
+    with saved_c2:
+        st.write()
+
+    with saved_c3:
+        st.write()
+
 with preferences_tab:
     st.header("Your recommended topics")
     with st.expander("Show raw datas"):
@@ -235,7 +344,6 @@ with preferences_tab:
         st.altair_chart(clusters_grid(st.session_state['cluster_datas'], clusters_compositions))
 
 with link_history_tab:
-    df_link_history_prep = preprocess_data(df_link_history=df_link_history)
     st.header("Link history")
     with st.expander("Show raw datas"):
         st.write("Follows")
@@ -290,9 +398,6 @@ with ads_tab:
 with personal_info_tab:
     st.header("Personal Information")
     st.write("What does instagram know about you ?")
-    df_locations_of_interest_prep = preprocess_data(df_locations_of_interest=df_locations_of_interest)
-    df_last_known_location = preprocess_data(df_last_known_location=df_last_known_location)
-    df_devices_prep = preprocess_data(df_devices=df_devices)
     with st.expander("Show raw data"):
         st.write("Your devices")
         st.write(df_devices)
@@ -357,3 +462,5 @@ with security_tab:
 
         st.subheader("Cookies Distribution")
         st.altair_chart(cookies_pie(df_logs), use_container_width=True)
+
+st.caption("Source: [Account Center - Instagram](https://accountscenter.instagram.com/info_and_permissions/dyi/?theme=dark)")

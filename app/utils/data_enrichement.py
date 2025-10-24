@@ -1,9 +1,18 @@
 import time
-import math
 from typing import Dict, Any, Optional, Iterable
 import requests
 import pandas as pd
 
+# ------------- Config for enrichement --------------------------------------------------------
+UA = {"User-Agent": "Lou-CompanyEnricher/0.1 (contact: you@example.com)"}
+WIKIPEDIA_LANGS = ("en", "fr")  # try in order
+JURIS_MAP = {
+    "fr": "France", "gb": "United Kingdom", "us": "United States",
+    "nl": "Netherlands", "de": "Germany", "at": "Austria", "ch": "Switzerland",
+    "it": "Italy", "es": "Spain", "be": "Belgium"
+}
+# polite rate-limit between external requests (seconds)
+REQUEST_PAUSE = 0.2
 
 # ------------- HTTP utils (shared session + retry/backoff) -------------------
 _session = requests.Session()
