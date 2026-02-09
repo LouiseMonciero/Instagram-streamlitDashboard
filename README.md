@@ -2,6 +2,8 @@
 Understand what Meta knows about you. This streamlit dashboard helps visualize your instagram personal data with minimal machine learning and dynamic figures.
 
 ## Use your own personnal data :
+This dashboard allows you to see your personal Instagram information, it won't be effective without any data giiven and will ask you to upload your personal data. You can upload manually the data with the following steps :
+
 1. Downloads as JSON your personnal data from your own instagram acocunt : https://accountscenter.instagram.com/info_and_permissions/dyi/?theme=dark
 
 2. Unzip the file and put it inside app/data
@@ -16,7 +18,12 @@ HEADERS = {
 }
 ```
 
-## Installation complète
+## Quick Setup
+0. Clone the git repository
+```bash
+git clone [...]
+```
+
 1. Install your python environement
 E.g.
 ```bash

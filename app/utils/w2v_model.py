@@ -87,7 +87,7 @@ def generate_clusters(recommended_topics, n_clusters=10):
 
     cluster_data = []
 
-    for cluster_id, cluster_topics in clusters.items():
+    for _, cluster_topics in clusters.items():
         cluster_name = create_cluster_name(cluster_topics)
         cluster_weight = len(cluster_topics)
         cluster_data.append({"cluster_name": cluster_name, "weights": cluster_weight})
