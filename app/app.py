@@ -734,6 +734,5 @@ with security_tab:
 
 st.markdown("---")
 st.caption("This dashboard respects your privacy - all data processing happens locally on your machine.")
-st.caption("This dashboard was vibecoded with [chatGPT-5](https://chatgpt.com/), [Claude Sonnet 4.5](https://claude.ai/) and [DeepSeek](https://chat.deepseek.com/)")
 
 st.caption("Source: [Account Center - Instagram](https://accountscenter.instagram.com/info_and_permissions/dyi/?theme=dark)")
