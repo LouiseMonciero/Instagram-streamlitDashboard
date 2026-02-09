@@ -1,6 +1,13 @@
 # Instagram-streamlitDashboard
 Understand what Meta knows about you. This streamlit dashboard helps visualize your instagram personal data with minimal machine learning and dynamic figures.
 
+## Demo 
+The Dashboard allows you to visualize many data depending on your profile. Here are some sight of the app :
+| | |
+|---|---|
+| ![Demo Screenshot 1](/demo/Upload_data.png) | ![Demo Screenshot 2](/demo/Home_page.png) |
+| ![Demo Screenshot 3](/demo/Galery_eg.png) | ![Demo Screenshot 4](/demo/Activities_eg.png) |
+
 ## Use your own personnal data :
 This dashboard allows you to see your personal Instagram information, it won't be effective without any data giiven and will ask you to upload your personal data. You can upload manually the data with the following steps :
 
