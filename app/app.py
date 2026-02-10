@@ -585,10 +585,11 @@ with activity_tab:
         
 
         st.subheader("Time spent on Instagram")
-        if not df_time_spent_on_ig_prep.empty:
-            chart = scroll_hist(df_time_spent_on_ig_prep, date_range=date_range)
-            if chart:
-                st.altair_chart(chart, use_container_width=True)
+        if df_time_spent_on_ig_prep is not None :
+            if not df_time_spent_on_ig_prep.empty:
+                chart = scroll_hist(df_time_spent_on_ig_prep, date_range=date_range)
+                if chart:
+                    st.altair_chart(chart, use_container_width=True)
         else:
             st.info("📊 No time tracking data available.")
 
@@ -617,10 +618,11 @@ with activity_tab:
             st.write()
 
         st.subheader("Link history")
-        if not df_link_history_prep.empty:
-            chart = website_bar(df_link_history_prep)
-            if chart:
-                st.altair_chart(chart)
+        if df_link_history_prep is not None :
+            if not df_link_history_prep.empty:
+                chart = website_bar(df_link_history_prep)
+                if chart:
+                    st.altair_chart(chart)
         else:
             st.info("📊 No link history data available.")
 
@@ -682,27 +684,26 @@ with ads_tab:
             st.table(information_youve_submitted_to_advertisers)
         else:
             st.info("No information submitted to advertisers.")
-
-        if not advertisers_using_your_activity_or_information.empty:
-            chart = ads_bar(advertisers_using_your_activity_or_information)
-            if chart:
-                st.altair_chart(chart)
+        if advertisers_using_your_activity_or_information is not None :
+            if not advertisers_using_your_activity_or_information.empty:
+                chart = ads_bar(advertisers_using_your_activity_or_information)
+                if chart:
+                    st.altair_chart(chart)
         else:
             st.info("📊 No advertiser data available.")
 
         if advertisers_enriched is not None and not advertisers_enriched.empty:
             st.write("The following visualizations were compiled thanks to data enrichment")
         else:
-            if not advertisers_using_your_activity_or_information.empty:
-                if st.button("Enrich the advertisers data"):
-                    seconds = len(advertisers_using_your_activity_or_information)
-                    with st.spinner(f"Enriching your advertisers data... Browsing the advertisers name on Wikidata... This may take a moment (~{seconds//60}min {seconds%60}sec)"):
-                        try:
-                            advertisers_enriched = enrich_companies(advertisers_using_your_activity_or_information, name_col="advertiser_name")
-                            advertisers_enriched.to_csv("./data/advertisers_enriched.csv")
-                            st.success("✅ Data enriched successfully!")
-                        except Exception as e:
-                            st.error(f"Error scraping the data: {e}")
+            if st.button("Enrich the advertisers data"):
+                seconds = len(advertisers_using_your_activity_or_information)
+                with st.spinner(f"Enriching your advertisers data... Browsing the advertisers name on Wikidata... This may take a moment (~{seconds//60}min {seconds%60}sec)"):
+                    try:
+                        advertisers_enriched = enrich_companies(advertisers_using_your_activity_or_information, name_col="advertiser_name")
+                        advertisers_enriched.to_csv("./data/advertisers_enriched.csv")
+                        st.success("✅ Data enriched successfully!")
+                    except Exception as e:
+                        st.error(f"Error scraping the data: {e}")
         
         st.info("""
             **Enrichment sources used:**
@@ -760,13 +761,13 @@ with personal_info_tab:
         with col1:
             st.write("Your profile is based in:", profile_based_in if profile_based_in else "Unknown")
             st.subheader("Your locations of interest")
-            if not df_locations_of_interest_prep.empty and 'lat' in df_locations_of_interest_prep.columns and 'lon' in df_locations_of_interest_prep.columns:
+            if (df_locations_of_interest_prep is not None) and not df_locations_of_interest_prep.empty and 'lat' in df_locations_of_interest_prep.columns and 'lon' in df_locations_of_interest_prep.columns:
                 st.map(df_locations_of_interest_prep)
             else:
                 st.info("📊 No location of interest data available.")
                 
             st.subheader("Your last known location")
-            if not df_last_known_location.empty and 'lat' in df_last_known_location.columns and 'longitude' in df_last_known_location.columns:
+            if (df_last_known_location is not None) and not df_last_known_location.empty and 'lat' in df_last_known_location.columns and 'longitude' in df_last_known_location.columns:
                 st.map(df_last_known_location)
             else:
                 st.info("📊 No last known location data available.")
