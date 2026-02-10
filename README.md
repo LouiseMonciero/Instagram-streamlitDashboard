@@ -7,6 +7,8 @@ The Dashboard allows you to visualize many data depending on your profile. Here 
 |---|---|
 | ![Demo Screenshot 1](/demo/Upload_data.png) | ![Demo Screenshot 2](/demo/Home_page.png) |
 | ![Demo Screenshot 3](/demo/Galery_eg.png) | ![Demo Screenshot 4](/demo/Activities_eg.png) |
+| ![Demo Screenshot 5](/demo/Advertisers_eg.png) | ![Demo Screenshot 6](/demo/Connection_tab_eg.png) |
+| ![Demo Screenshot 8](/demo/Personal_Info_eg.png) | ![Demo Screenshot 7](/demo/Link_histroy_eg.png) |
 
 ## Use your own personnal data :
 This dashboard allows you to see your personal Instagram information, it won't be effective without any data giiven and will ask you to upload your personal data. You can upload manually the data with the following steps :
